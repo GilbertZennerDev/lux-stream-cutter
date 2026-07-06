@@ -210,7 +210,7 @@ function Dashboard() {
       setStage("asr");
       setProgress(0);
       appendLog(`[ASR] Uploading ${(audio.size / 1024).toFixed(0)} KB to LuxASR…`);
-      const asrRes = await fetch("/api/asr", {
+      const submitRes = await fetch("/api/asr", {
         method: "POST",
         headers: {
           "content-type": "audio/mpeg",
@@ -219,12 +219,39 @@ function Dashboard() {
         body: audio,
         signal: ac.signal,
       });
-      if (!asrRes.ok) {
-        const body = await asrRes.json().catch(() => ({ error: asrRes.statusText }));
-        throw new Error(`LuxASR: ${body.error ?? asrRes.statusText}`);
+      if (!submitRes.ok) {
+        const body = await submitRes.json().catch(() => ({ error: submitRes.statusText }));
+        throw new Error(`LuxASR: ${body.error ?? submitRes.statusText}`);
       }
-      const asrJson = (await asrRes.json()) as { result: unknown };
+      const { jobId } = (await submitRes.json()) as { jobId: string };
+      appendLog(`[ASR] Job ${jobId} submitted, polling…`);
+
+      // Poll from the client so no single server request stays open for minutes.
+      const startedAt = Date.now();
+      const MAX_MS = 15 * 60 * 1000;
+      let asrResult: unknown = null;
+      while (true) {
+        checkCancel();
+        if (Date.now() - startedAt > MAX_MS) throw new Error("LuxASR polling timed out");
+        await new Promise((r) => setTimeout(r, 3000));
+        checkCancel();
+        const pollRes = await fetch(`/api/asr?jobId=${encodeURIComponent(jobId)}`, {
+          signal: ac.signal,
+        });
+        if (!pollRes.ok) {
+          const body = await pollRes.json().catch(() => ({ error: pollRes.statusText }));
+          throw new Error(`LuxASR: ${body.error ?? pollRes.statusText}`);
+        }
+        const p = (await pollRes.json()) as { status: string; result?: unknown };
+        if (p.status === "completed") {
+          asrResult = p.result;
+          break;
+        }
+        appendLog(`[ASR] status: ${p.status}`);
+      }
+      const asrJson = { result: asrResult };
       appendLog("[ASR] Transcription received");
+
 
       // Stage 4: SRT
       setStage("srt");
