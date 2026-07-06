@@ -66,7 +66,7 @@ export const Route = createFileRoute("/api/asr")({
           if (j.status === "failed")
             return jsonError(`LuxASR job failed: ${j.error ?? ""}`, 502);
           if (j.status !== "completed") return Response.json({ status: j.status ?? "pending" });
-          const resultRes = await fetch(`${LUXASR_BASE}/v3/asr/jobs/${jobId}/result`);
+          const resultRes = await fetch(`${LUXASR_BASE}/v3/asr/jobs/${safeJobId}/result`);
           if (!resultRes.ok)
             return jsonError(`Result fetch failed: ${resultRes.status}`, 502);
           const result = await resultRes.json();
