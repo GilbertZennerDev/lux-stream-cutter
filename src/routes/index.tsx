@@ -26,7 +26,12 @@ import { luxasrJsonToCues, cuesToSrt } from "@/lib/subtitles/luxasrToSrt";
 import { shortenCues } from "@/lib/subtitles/shortenSrt";
 import { RecorderCard } from "@/components/dashboard/RecorderCard";
 
+const indexSearchSchema = z.object({
+  recording: z.string().uuid().optional(),
+});
+
 export const Route = createFileRoute("/")({
+  validateSearch: indexSearchSchema,
   head: () => ({
     meta: [
       { title: "Video Cutter & Auto-Subtitler Pro" },
