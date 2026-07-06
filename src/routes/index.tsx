@@ -431,18 +431,29 @@ function Dashboard() {
                 </div>
               )}
 
-              <Button
-                onClick={run}
-                disabled={!canRun}
-                className="w-full"
-                size="lg"
-              >
-                {stage !== "idle" && stage !== "done" && stage !== "error" ? (
-                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running…</>
-                ) : (
-                  <><Play className="h-4 w-4 mr-2" /> Run</>
+              <div className="flex gap-2">
+                <Button
+                  onClick={run}
+                  disabled={!canRun}
+                  className="flex-1"
+                  size="lg"
+                >
+                  {isRunning ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running…</>
+                  ) : (
+                    <><Play className="h-4 w-4 mr-2" /> Run</>
+                  )}
+                </Button>
+                {isRunning && (
+                  <Button
+                    onClick={cancel}
+                    variant="destructive"
+                    size="lg"
+                  >
+                    <X className="h-4 w-4 mr-2" /> Cancel
+                  </Button>
                 )}
-              </Button>
+              </div>
 
               {error && (
                 <Alert variant="destructive">
