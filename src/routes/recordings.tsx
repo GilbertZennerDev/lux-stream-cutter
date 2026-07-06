@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Library, Scissors, Radio, Download, Trash2, ArrowRight, Loader2 } from "lucide-react";
+import { Library, Scissors, Radio, Download, Trash2, ArrowRight, Loader2, Film } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -79,6 +79,9 @@ function RecordingsPage() {
             </Link>
             <Link to="/studio" className="px-3 py-1.5 rounded-md hover:bg-muted flex items-center gap-1.5">
               <Radio className="h-4 w-4" /> Studio
+            </Link>
+            <Link to="/premiere" className="px-3 py-1.5 rounded-md hover:bg-muted flex items-center gap-1.5">
+              <Film className="h-4 w-4" /> Premiere
             </Link>
           </nav>
         </div>

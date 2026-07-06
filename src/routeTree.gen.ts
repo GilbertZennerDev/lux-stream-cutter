@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as RecordingsRouteImport } from './routes/recordings'
+import { Route as PremiereRouteImport } from './routes/premiere'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiHlsProxyRouteImport } from './routes/api/hls-proxy'
 import { Route as ApiAsrRouteImport } from './routes/api/asr'
@@ -24,6 +25,11 @@ const StudioRoute = StudioRouteImport.update({
 const RecordingsRoute = RecordingsRouteImport.update({
   id: '/recordings',
   path: '/recordings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PremiereRoute = PremiereRouteImport.update({
+  id: '/premiere',
+  path: '/premiere',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -50,6 +56,7 @@ const ApiPublicHooksCleanupRecordingsRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/premiere': typeof PremiereRoute
   '/recordings': typeof RecordingsRoute
   '/studio': typeof StudioRoute
   '/api/asr': typeof ApiAsrRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/premiere': typeof PremiereRoute
   '/recordings': typeof RecordingsRoute
   '/studio': typeof StudioRoute
   '/api/asr': typeof ApiAsrRoute
@@ -67,6 +75,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/premiere': typeof PremiereRoute
   '/recordings': typeof RecordingsRoute
   '/studio': typeof StudioRoute
   '/api/asr': typeof ApiAsrRoute
@@ -77,6 +86,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/premiere'
     | '/recordings'
     | '/studio'
     | '/api/asr'
@@ -85,6 +95,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/premiere'
     | '/recordings'
     | '/studio'
     | '/api/asr'
@@ -93,6 +104,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/premiere'
     | '/recordings'
     | '/studio'
     | '/api/asr'
@@ -102,6 +114,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  PremiereRoute: typeof PremiereRoute
   RecordingsRoute: typeof RecordingsRoute
   StudioRoute: typeof StudioRoute
   ApiAsrRoute: typeof ApiAsrRoute
@@ -123,6 +136,13 @@ declare module '@tanstack/react-router' {
       path: '/recordings'
       fullPath: '/recordings'
       preLoaderRoute: typeof RecordingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/premiere': {
+      id: '/premiere'
+      path: '/premiere'
+      fullPath: '/premiere'
+      preLoaderRoute: typeof PremiereRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -158,6 +178,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  PremiereRoute: PremiereRoute,
   RecordingsRoute: RecordingsRoute,
   StudioRoute: StudioRoute,
   ApiAsrRoute: ApiAsrRoute,
@@ -167,13 +188,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

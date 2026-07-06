@@ -2,7 +2,7 @@ import { createFileRoute, Link, useSearch, useNavigate } from "@tanstack/react-r
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { getRecordingDownloadUrl } from "@/lib/recordings.functions";
-import { Radio, Library } from "lucide-react";
+import { Radio, Library, Film } from "lucide-react";
 import {
   CheckCircle2, Circle, Loader2, Upload, Download, Scissors,
   Music, Cloud, FileText, Type, Flame, Play, X,
@@ -388,6 +388,9 @@ function Dashboard() {
             </Link>
             <Link to="/recordings" className="px-3 py-1.5 rounded-md hover:bg-muted flex items-center gap-1.5">
               <Library className="h-4 w-4" /> Recordings
+            </Link>
+            <Link to="/premiere" className="px-3 py-1.5 rounded-md hover:bg-muted flex items-center gap-1.5">
+              <Film className="h-4 w-4" /> Premiere
             </Link>
           </nav>
         </div>
