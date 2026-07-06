@@ -67,6 +67,7 @@ function Dashboard() {
   const [maxChars, setMaxChars] = useState(90);
   const [burnIn, setBurnIn] = useState(true);
   const [lowPerf, setLowPerf] = useState(false);
+  const [maxHeight, setMaxHeight] = useState<0 | 480 | 720 | 1080>(0);
 
   const [stage, setStage] = useState<Stage>("idle");
   const [progress, setProgress] = useState(0);
@@ -121,7 +122,7 @@ function Dashboard() {
         if (!durationInfo.ok) throw new Error(durationInfo.msg);
         const s = parseTimeToSeconds(start);
         const e = parseTimeToSeconds(end);
-        const cut = await cutVideo(file, s, e, setProgress, { lowPerf });
+        const cut = await cutVideo(file, s, e, setProgress, { lowPerf, maxHeight });
         const clip = new Blob([cut as BlobPart], { type: "video/mp4" });
         setClipBlob(clip);
         workingVideo = clip;
@@ -178,7 +179,7 @@ function Dashboard() {
       if (burnIn) {
         setStage("burning");
         setProgress(0);
-        const subbed = await burnSubtitles(workingVideo, srt, fontSize, setProgress, { lowPerf });
+        const subbed = await burnSubtitles(workingVideo, srt, fontSize, setProgress, { lowPerf, maxHeight });
         setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
         setProgress(1);
       }
@@ -365,10 +366,34 @@ function Dashboard() {
                     <div>
                       <Label htmlFor="lowperf">Low-performance mode</Label>
                       <p className="text-xs text-muted-foreground">
-                        For weak PCs: 480p, ultrafast preset, 1 thread. ~2–3× schneller, kleineres Video.
+                        For weak PCs: ultrafast preset, 1 thread. ~2–3× schneller.
                       </p>
                     </div>
                     <Switch id="lowperf" checked={lowPerf} onCheckedChange={setLowPerf} />
+                  </div>
+                  <div>
+                    <Label>Output resolution</Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Kleiner = deutlich schneller beim Burn-in. Auch im Low-perf Modus wählbar.
+                    </p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {([
+                        { v: 0 as const, label: "Source" },
+                        { v: 480 as const, label: "480p" },
+                        { v: 720 as const, label: "720p" },
+                        { v: 1080 as const, label: "1080p" },
+                      ]).map((o) => (
+                        <Button
+                          key={o.v}
+                          type="button"
+                          size="sm"
+                          variant={maxHeight === o.v ? "default" : "outline"}
+                          onClick={() => setMaxHeight(o.v)}
+                        >
+                          {o.label}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
