@@ -179,7 +179,7 @@ function Dashboard() {
       if (burnIn) {
         setStage("burning");
         setProgress(0);
-        const subbed = await burnSubtitles(workingVideo, srt, fontSize, setProgress, { lowPerf });
+        const subbed = await burnSubtitles(workingVideo, srt, fontSize, setProgress, { lowPerf, maxHeight });
         setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
         setProgress(1);
       }
