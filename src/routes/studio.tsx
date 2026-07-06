@@ -71,11 +71,18 @@ function Studio() {
     setLogs((l) => (l.length > 400 ? [...l.slice(-400), stamped] : [...l, stamped]));
   }, []);
 
-  // 1s tick
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // 1s tick — only after mount to avoid SSR/client time mismatch
   useEffect(() => {
+    if (!mounted) return;
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [mounted]);
+
+  const sessionWindow = useMemo(() => nextSessionWindow(now), [now]);
+  const inSession = useMemo(() => (mounted ? isInSession(now) : null), [mounted, now]);
 
   const sessionWindow = useMemo(() => nextSessionWindow(now), [now]);
   const inSession = useMemo(() => isInSession(now), [now]);
