@@ -14,8 +14,8 @@ async function submitJob(bytes: ArrayBuffer, contentType: string, filename: stri
     "Content-Type": contentType || "audio/mpeg",
     "X-Filename": filename,
   };
-  const key = process.env.LUXASR_API_KEY;
-  if (key) headers["Authorization"] = `Bearer ${key}`;
+  };
+
   const res = await fetch(`${LUXASR_BASE}/asr2?${params.toString()}`, {
     method: "POST",
     headers,
