@@ -47,10 +47,8 @@ async function pollJob(jobId: string): Promise<"completed"> {
 }
 
 async function fetchResult(jobId: string): Promise<unknown> {
-  const key = process.env.LUXASR_API_KEY;
-  const headers: Record<string, string> = {};
-  if (key) headers["Authorization"] = `Bearer ${key}`;
-  const res = await fetch(`${LUXASR_BASE}/v3/asr/jobs/${jobId}/result`, { headers });
+  const res = await fetch(`${LUXASR_BASE}/v3/asr/jobs/${jobId}/result`);
+
   if (!res.ok) throw new Error(`Result fetch failed: ${res.status}`);
   return res.json();
 }
