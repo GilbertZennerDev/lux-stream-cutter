@@ -164,6 +164,16 @@ function Dashboard() {
       setAudioBlob(audio);
       setProgress(1);
 
+      // Detect silence / empty audio → skip ASR pipeline, offer clip only.
+      const silent = await isAudioSilent(audio);
+      if (silent) {
+        appendLog("[AUDIO] No audible content detected — skipping transcription");
+        toast.message("No audio detected — clip ready for download");
+        setStage("done");
+        return;
+      }
+
+
       // Stage 3: LuxASR
       setStage("asr");
       setProgress(0);
