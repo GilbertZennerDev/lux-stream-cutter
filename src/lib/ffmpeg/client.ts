@@ -31,6 +31,19 @@ export async function getFFmpeg(): Promise<FFmpeg> {
   return ffmpegPromise;
 }
 
+/** Hard-abort any in-flight ffmpeg work. Next getFFmpeg() call will reload. */
+export async function cancelFFmpeg(): Promise<void> {
+  const p = ffmpegPromise;
+  ffmpegPromise = null;
+  if (!p) return;
+  try {
+    const ff = await p;
+    ff.terminate();
+  } catch {
+    // ignore
+  }
+}
+
 export type ProgressCb = (ratio: number) => void;
 
 export function onProgress(ffmpeg: FFmpeg, cb: ProgressCb) {

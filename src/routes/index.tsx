@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2, Circle, Loader2, Upload, Download, Scissors,
-  Music, Cloud, FileText, Type, Flame, Play,
+  Music, Cloud, FileText, Type, Flame, Play, X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import { toast } from "sonner";
 
 import { parseTimeToSeconds, formatSeconds } from "@/lib/subtitles/parseTime";
 import { cutVideo, extractAudioMp3, burnSubtitles } from "@/lib/ffmpeg/operations";
-import { onFfmpegLog } from "@/lib/ffmpeg/client";
+import { onFfmpegLog, cancelFFmpeg } from "@/lib/ffmpeg/client";
 import { luxasrJsonToCues, cuesToSrt } from "@/lib/subtitles/luxasrToSrt";
 import { shortenCues } from "@/lib/subtitles/shortenSrt";
 
@@ -80,6 +80,8 @@ function Dashboard() {
   const [subbedBlob, setSubbedBlob] = useState<Blob | null>(null);
 
   const logRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const cancelledRef = useRef(false);
 
   const appendLog = useCallback((msg: string) => {
     setLogs((l) => {
@@ -104,8 +106,19 @@ function Dashboard() {
     }
   }, [start, end]);
 
-  const canRun = file && stage !== "cutting" && stage !== "extracting" &&
-    stage !== "asr" && stage !== "srt" && stage !== "shortening" && stage !== "burning";
+  const isRunning = stage === "cutting" || stage === "extracting" ||
+    stage === "asr" || stage === "srt" || stage === "shortening" || stage === "burning";
+
+  const cancel = useCallback(async () => {
+    if (!isRunning) return;
+    cancelledRef.current = true;
+    abortRef.current?.abort();
+    appendLog("[CANCEL] Aborting…");
+    await cancelFFmpeg();
+    setStage("idle");
+    setProgress(0);
+    toast.message("Cancelled");
+  }, [isRunning, appendLog]);
 
   const run = async () => {
     if (!file) return;
@@ -113,6 +126,12 @@ function Dashboard() {
     setClipBlob(null); setAudioBlob(null); setSrtText(null); setSubbedBlob(null);
     setLogs([]);
     setProgress(0);
+    cancelledRef.current = false;
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const checkCancel = () => {
+      if (cancelledRef.current) throw new Error("Cancelled");
+    };
     try {
       let workingVideo: Blob = file;
 
@@ -123,6 +142,7 @@ function Dashboard() {
         const s = parseTimeToSeconds(start);
         const e = parseTimeToSeconds(end);
         const cut = await cutVideo(file, s, e, setProgress, { lowPerf, maxHeight });
+        checkCancel();
         const clip = new Blob([cut as BlobPart], { type: "video/mp4" });
         setClipBlob(clip);
         workingVideo = clip;
@@ -139,6 +159,7 @@ function Dashboard() {
       setStage("extracting");
       setProgress(0);
       const audioBytes = await extractAudioMp3(workingVideo, setProgress, { lowPerf });
+      checkCancel();
       const audio = new Blob([audioBytes as BlobPart], { type: "audio/mpeg" });
       setAudioBlob(audio);
       setProgress(1);
@@ -154,6 +175,7 @@ function Dashboard() {
           "x-filename": "clip.mp3",
         },
         body: audio,
+        signal: ac.signal,
       });
       if (!asrRes.ok) {
         const body = await asrRes.json().catch(() => ({ error: asrRes.statusText }));
@@ -180,6 +202,7 @@ function Dashboard() {
         setStage("burning");
         setProgress(0);
         const subbed = await burnSubtitles(workingVideo, srt, fontSize, setProgress, { lowPerf, maxHeight });
+        checkCancel();
         setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
         setProgress(1);
       }
@@ -188,13 +211,23 @@ function Dashboard() {
       toast.success("Pipeline complete");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (cancelledRef.current || message === "Cancelled" || (err as Error)?.name === "AbortError") {
+        appendLog("[CANCEL] Pipeline stopped");
+        setStage("idle");
+        return;
+      }
       console.error(err);
       appendLog(`[ERROR] ${message}`);
       setError(message);
       setStage("error");
       toast.error(message);
+    } finally {
+      abortRef.current = null;
     }
   };
+
+  const canRun = !!file && !isRunning;
+
 
   const download = (blob: Blob | null, name: string) => {
     if (!blob) return;
@@ -398,18 +431,29 @@ function Dashboard() {
                 </div>
               )}
 
-              <Button
-                onClick={run}
-                disabled={!canRun}
-                className="w-full"
-                size="lg"
-              >
-                {stage !== "idle" && stage !== "done" && stage !== "error" ? (
-                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running…</>
-                ) : (
-                  <><Play className="h-4 w-4 mr-2" /> Run</>
+              <div className="flex gap-2">
+                <Button
+                  onClick={run}
+                  disabled={!canRun}
+                  className="flex-1"
+                  size="lg"
+                >
+                  {isRunning ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running…</>
+                  ) : (
+                    <><Play className="h-4 w-4 mr-2" /> Run</>
+                  )}
+                </Button>
+                {isRunning && (
+                  <Button
+                    onClick={cancel}
+                    variant="destructive"
+                    size="lg"
+                  >
+                    <X className="h-4 w-4 mr-2" /> Cancel
+                  </Button>
                 )}
-              </Button>
+              </div>
 
               {error && (
                 <Alert variant="destructive">
