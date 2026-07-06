@@ -73,6 +73,23 @@ export async function extractAudioMp3(
   }
 }
 
+const FONT_URL =
+  "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf";
+const FONT_FAMILY = "Noto Sans";
+let fontLoaded = false;
+
+async function ensureFont(ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>) {
+  if (fontLoaded) return;
+  try {
+    await ffmpeg.createDir("/fonts");
+  } catch {
+    // already exists
+  }
+  const bytes = await fetchFile(FONT_URL);
+  await ffmpeg.writeFile("/fonts/NotoSans-Regular.ttf", bytes);
+  fontLoaded = true;
+}
+
 export async function burnSubtitles(
   video: File | Blob,
   srtText: string,
@@ -84,16 +101,17 @@ export async function burnSubtitles(
   const inputName = "clip.mp4";
   const subsName = "subs.srt";
   const outputName = "clip_subbed.mp4";
+  await ensureFont(ffmpeg);
   await ffmpeg.writeFile(inputName, await fetchFile(video));
   await ffmpeg.writeFile(subsName, new TextEncoder().encode(srtText));
   const style =
-    `FontName=Arial,FontSize=${fontSize},PrimaryColour=&HFFFFFF&,` +
+    `FontName=${FONT_FAMILY},FontSize=${fontSize},PrimaryColour=&HFFFFFF&,` +
     `OutlineColour=&H000000&,BorderStyle=1,Outline=2,Shadow=0,` +
     `Bold=1,Alignment=2,MarginV=40`;
   try {
     await ffmpeg.exec([
       "-i", inputName,
-      "-vf", `subtitles=${subsName}:force_style='${style}'`,
+      "-vf", `subtitles=${subsName}:fontsdir=/fonts:force_style='${style}'`,
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
       "-c:a", "copy",
       "-movflags", "+faststart",
