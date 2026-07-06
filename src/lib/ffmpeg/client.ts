@@ -1,10 +1,10 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import wasmAsset from "../../../public/ffmpeg/ffmpeg-core.wasm.asset.json";
+import { toBlobURL } from "@ffmpeg/util";
 
-// Single-threaded core hosted locally (JS) + CDN (wasm) to avoid CORS/blob
-// issues with unpkg in sandboxed previews.
-const CORE_URL = "/ffmpeg/ffmpeg-core.js";
-const WASM_URL = wasmAsset.url;
+// Load ffmpeg-core from unpkg via blob URLs — avoids Vite trying to
+// transform the core JS as a module (which caused 500 on /ffmpeg/ffmpeg-core.js?import).
+const CORE_VERSION = "0.12.6";
+const BASE_URL = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`;
 
 let ffmpegPromise: Promise<FFmpeg> | null = null;
 let logListener: ((msg: string) => void) | null = null;
@@ -20,10 +20,11 @@ export async function getFFmpeg(): Promise<FFmpeg> {
     ffmpeg.on("log", ({ message }) => {
       logListener?.(message);
     });
-    await ffmpeg.load({
-      coreURL: CORE_URL,
-      wasmURL: WASM_URL,
-    });
+    const [coreURL, wasmURL] = await Promise.all([
+      toBlobURL(`${BASE_URL}/ffmpeg-core.js`, "text/javascript"),
+      toBlobURL(`${BASE_URL}/ffmpeg-core.wasm`, "application/wasm"),
+    ]);
+    await ffmpeg.load({ coreURL, wasmURL });
     return ffmpeg;
   })();
   return ffmpegPromise;
