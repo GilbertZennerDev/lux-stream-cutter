@@ -14,7 +14,8 @@ async function submitJob(bytes: ArrayBuffer, contentType: string, filename: stri
     "Content-Type": contentType || "audio/mpeg",
     "X-Filename": filename,
   };
-  };
+
+
 
   const res = await fetch(`${LUXASR_BASE}/asr2?${params.toString()}`, {
     method: "POST",
