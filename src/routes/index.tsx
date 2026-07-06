@@ -351,6 +351,11 @@ function Dashboard() {
       <main className="mx-auto max-w-7xl px-6 py-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {/* LEFT: Controls */}
         <div className="space-y-6">
+          <RecorderCard
+            onUseRecording={(f) => setFile(f)}
+            onLog={(m) => appendLog(m)}
+          />
+
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">1. Source video</CardTitle>
