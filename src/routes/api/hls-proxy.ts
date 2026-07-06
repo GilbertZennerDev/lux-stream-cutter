@@ -49,19 +49,33 @@ export const Route = createFileRoute("/api/hls-proxy")({
           if (!isAllowed(parsed.hostname))
             return errJson(`Host not allowed: ${parsed.hostname}`, 403);
 
-          const upstream = await fetch(parsed.toString(), {
-            method: "GET",
-            headers: { "User-Agent": "LuxStreamRecorder/1.0" },
-          });
+          let upstream: Response;
+          try {
+            upstream = await fetch(parsed.toString(), {
+              method: "GET",
+              headers: { "User-Agent": "LuxStreamRecorder/1.0" },
+            });
+          } catch (err) {
+            // Upstream network hiccup / abort. Return a soft 503 that the
+            // recorder can retry, and never bubble as a page-crashing error.
+            const msg = (err as Error).message || "Upstream fetch failed";
+            return new Response(
+              JSON.stringify({ error: "UPSTREAM_UNAVAILABLE", message: msg, fallback: true }),
+              { status: 503, headers: { "Content-Type": "application/json", ...CORS_HEADERS } },
+            );
+          }
+
           const headers = new Headers();
           const ct = upstream.headers.get("content-type");
           if (ct) headers.set("content-type", ct);
           const cl = upstream.headers.get("content-length");
           if (cl) headers.set("content-length", cl);
           for (const [k, v] of Object.entries(CORS_HEADERS)) headers.set(k, v);
+          // Pass through upstream status verbatim (including 4xx/5xx) so the
+          // recorder can decide whether to retry — do NOT collapse to 502.
           return new Response(upstream.body, { status: upstream.status, headers });
         } catch (err) {
-          return errJson((err as Error).message || "Proxy error", 502);
+          return errJson((err as Error).message || "Proxy error", 500);
         }
       },
     },
