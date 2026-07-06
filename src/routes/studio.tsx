@@ -59,7 +59,7 @@ function Studio() {
     return () => clearInterval(id);
   }, []);
 
-  const window = useMemo(() => nextSessionWindow(now), [now]);
+  const sessionWindow = useMemo(() => nextSessionWindow(now), [now]);
   const inSession = useMemo(() => isInSession(now), [now]);
 
   const startNow = useCallback(
