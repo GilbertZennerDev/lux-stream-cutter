@@ -36,7 +36,25 @@ export const Route = createFileRoute("/studio")({
     ],
   }),
   component: Studio,
+  errorComponent: StudioError,
 });
+
+function StudioError({ error, reset }: { error: Error; reset: () => void }) {
+  return (
+    <div className="min-h-screen grid place-items-center bg-background text-foreground p-6">
+      <div className="max-w-md space-y-3 text-center">
+        <h1 className="text-lg font-semibold">Studio hit an error</h1>
+        <p className="text-sm text-muted-foreground break-words">{error.message}</p>
+        <button
+          onClick={reset}
+          className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm"
+        >
+          Retry
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function Studio() {
   const [url, setUrl] = useState(DEFAULT_URL);
