@@ -115,8 +115,8 @@ function Studio() {
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, []);
 
-  const untilStart = window.start.getTime() - now.getTime();
-  const untilEnd = window.end.getTime() - now.getTime();
+  const untilStart = sessionWindow.start.getTime() - now.getTime();
+  const untilEnd = sessionWindow.end.getTime() - now.getTime();
   const elapsed = inSession ? now.getTime() - inSession.start.getTime() : 0;
 
   return (
@@ -163,7 +163,7 @@ function Studio() {
           <CardContent className="grid gap-3 md:grid-cols-3">
             <StatCard
               label={inSession ? "Session ends in" : "Next session"}
-              value={inSession ? formatDurationMs(untilEnd) : formatLuxTime(window.start)}
+              value={inSession ? formatDurationMs(untilEnd) : formatLuxTime(sessionWindow.start)}
               hint={
                 inSession
                   ? `Started ${formatLuxTime(inSession.start)}`
@@ -173,7 +173,7 @@ function Studio() {
             />
             <StatCard
               label="Session date"
-              value={window.sessionDate}
+              value={sessionWindow.sessionDate}
               hint={`${SCHEDULE.startHour}:00 – ${SCHEDULE.endHour}:00 Europe/Luxembourg`}
             />
             <StatCard
@@ -216,7 +216,7 @@ function Studio() {
               {!recording ? (
                 <Button
                   onClick={() =>
-                    startNow(inSession?.sessionDate ?? window.sessionDate)
+                    startNow(inSession?.sessionDate ?? sessionWindow.sessionDate)
                   }
                 >
                   <Radio className="h-4 w-4 mr-2" /> Start now
@@ -228,7 +228,7 @@ function Studio() {
               )}
               {autoMode && !recording && (
                 <span className="text-xs text-muted-foreground self-center inline-flex items-center gap-1">
-                  <Loader2 className="h-3 w-3 animate-spin" /> Waiting for {formatLuxTime(window.start)}
+                  <Loader2 className="h-3 w-3 animate-spin" /> Waiting for {formatLuxTime(sessionWindow.start)}
                 </span>
               )}
             </div>
