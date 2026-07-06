@@ -91,6 +91,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Video Cutter & Auto-Subtitler Pro" },
+      { name: "description", content: "Cut videos in-browser and auto-generate Luxembourgish subtitles with LuxASR. Trim, transcribe, and burn-in captions — all client-side." },
+      { property: "og:description", content: "Cut videos in-browser and auto-generate Luxembourgish subtitles with LuxASR. Trim, transcribe, and burn-in captions — all client-side." },
+      { name: "twitter:description", content: "Cut videos in-browser and auto-generate Luxembourgish subtitles with LuxASR. Trim, transcribe, and burn-in captions — all client-side." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7e92ceed-b824-43db-93d2-6f3be8443a85/id-preview-716c1043--b7a5e62c-aa52-44d8-ab33-18a7e7768692.lovable.app-1783356603955.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7e92ceed-b824-43db-93d2-6f3be8443a85/id-preview-716c1043--b7a5e62c-aa52-44d8-ab33-18a7e7768692.lovable.app-1783356603955.png" },
     ],
     links: [
       {
