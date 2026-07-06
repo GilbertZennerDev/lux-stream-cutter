@@ -1,9 +1,10 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { toBlobURL } from "@ffmpeg/util";
+import wasmAsset from "../../../public/ffmpeg/ffmpeg-core.wasm.asset.json";
 
-// Single-threaded core — works without SharedArrayBuffer / COOP-COEP headers.
-const CORE_VERSION = "0.12.6";
-const BASE = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`;
+// Single-threaded core hosted locally (JS) + CDN (wasm) to avoid CORS/blob
+// issues with unpkg in sandboxed previews.
+const CORE_URL = "/ffmpeg/ffmpeg-core.js";
+const WASM_URL = wasmAsset.url;
 
 let ffmpegPromise: Promise<FFmpeg> | null = null;
 let logListener: ((msg: string) => void) | null = null;
@@ -20,8 +21,8 @@ export async function getFFmpeg(): Promise<FFmpeg> {
       logListener?.(message);
     });
     await ffmpeg.load({
-      coreURL: await toBlobURL(`${BASE}/ffmpeg-core.js`, "text/javascript"),
-      wasmURL: await toBlobURL(`${BASE}/ffmpeg-core.wasm`, "application/wasm"),
+      coreURL: CORE_URL,
+      wasmURL: WASM_URL,
     });
     return ffmpeg;
   })();
