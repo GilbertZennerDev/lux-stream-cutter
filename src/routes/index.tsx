@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2, Circle, Loader2, Upload, Download, Scissors,
-  Music, Cloud, FileText, Type, Flame, Play,
+  Music, Cloud, FileText, Type, Flame, Play, X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
