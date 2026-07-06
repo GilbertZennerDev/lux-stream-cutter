@@ -71,14 +71,19 @@ function Studio() {
     setLogs((l) => (l.length > 400 ? [...l.slice(-400), stamped] : [...l, stamped]));
   }, []);
 
-  // 1s tick
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // 1s tick — only after mount to avoid SSR/client time mismatch
   useEffect(() => {
+    if (!mounted) return;
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [mounted]);
 
   const sessionWindow = useMemo(() => nextSessionWindow(now), [now]);
-  const inSession = useMemo(() => isInSession(now), [now]);
+  const inSession = useMemo(() => (mounted ? isInSession(now) : null), [mounted, now]);
+
 
   const startNow = useCallback(
     (sessionDate: string) => {
@@ -181,11 +186,19 @@ function Studio() {
           <CardContent className="grid gap-3 md:grid-cols-3">
             <StatCard
               label={inSession ? "Session ends in" : "Next session"}
-              value={inSession ? formatDurationMs(untilEnd) : formatLuxTime(sessionWindow.start)}
+              value={
+                !mounted
+                  ? "—"
+                  : inSession
+                    ? formatDurationMs(untilEnd)
+                    : formatLuxTime(sessionWindow.start)
+              }
               hint={
-                inSession
-                  ? `Started ${formatLuxTime(inSession.start)}`
-                  : `Starts in ${formatDurationMs(untilStart)}`
+                !mounted
+                  ? " "
+                  : inSession
+                    ? `Started ${formatLuxTime(inSession.start)}`
+                    : `Starts in ${formatDurationMs(untilStart)}`
               }
               highlight={!!inSession}
             />
