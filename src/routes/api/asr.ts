@@ -14,8 +14,9 @@ async function submitJob(bytes: ArrayBuffer, contentType: string, filename: stri
     "Content-Type": contentType || "audio/mpeg",
     "X-Filename": filename,
   };
-  const key = process.env.LUXASR_API_KEY;
-  if (key) headers["Authorization"] = `Bearer ${key}`;
+
+
+
   const res = await fetch(`${LUXASR_BASE}/asr2?${params.toString()}`, {
     method: "POST",
     headers,
@@ -31,9 +32,8 @@ async function submitJob(bytes: ArrayBuffer, contentType: string, filename: stri
 }
 
 async function pollJob(jobId: string): Promise<"completed"> {
-  const key = process.env.LUXASR_API_KEY;
   const headers: Record<string, string> = {};
-  if (key) headers["Authorization"] = `Bearer ${key}`;
+
   const started = Date.now();
   while (Date.now() - started < MAX_POLL_MS) {
     const res = await fetch(`${LUXASR_BASE}/v3/asr/jobs/${jobId}`, { headers });
@@ -47,10 +47,8 @@ async function pollJob(jobId: string): Promise<"completed"> {
 }
 
 async function fetchResult(jobId: string): Promise<unknown> {
-  const key = process.env.LUXASR_API_KEY;
-  const headers: Record<string, string> = {};
-  if (key) headers["Authorization"] = `Bearer ${key}`;
-  const res = await fetch(`${LUXASR_BASE}/v3/asr/jobs/${jobId}/result`, { headers });
+  const res = await fetch(`${LUXASR_BASE}/v3/asr/jobs/${jobId}/result`);
+
   if (!res.ok) throw new Error(`Result fetch failed: ${res.status}`);
   return res.json();
 }
