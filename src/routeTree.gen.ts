@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiHlsProxyRouteImport } from './routes/api/hls-proxy'
 import { Route as ApiAsrRouteImport } from './routes/api/asr'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHlsProxyRoute = ApiHlsProxyRouteImport.update({
+  id: '/api/hls-proxy',
+  path: '/api/hls-proxy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAsrRoute = ApiAsrRouteImport.update({
@@ -26,27 +32,31 @@ const ApiAsrRoute = ApiAsrRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/asr': typeof ApiAsrRoute
+  '/api/hls-proxy': typeof ApiHlsProxyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/asr': typeof ApiAsrRoute
+  '/api/hls-proxy': typeof ApiHlsProxyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/asr': typeof ApiAsrRoute
+  '/api/hls-proxy': typeof ApiHlsProxyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/asr'
+  fullPaths: '/' | '/api/asr' | '/api/hls-proxy'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/asr'
-  id: '__root__' | '/' | '/api/asr'
+  to: '/' | '/api/asr' | '/api/hls-proxy'
+  id: '__root__' | '/' | '/api/asr' | '/api/hls-proxy'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiAsrRoute: typeof ApiAsrRoute
+  ApiHlsProxyRoute: typeof ApiHlsProxyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/hls-proxy': {
+      id: '/api/hls-proxy'
+      path: '/api/hls-proxy'
+      fullPath: '/api/hls-proxy'
+      preLoaderRoute: typeof ApiHlsProxyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/asr': {
@@ -71,17 +88,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiAsrRoute: ApiAsrRoute,
+  ApiHlsProxyRoute: ApiHlsProxyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
