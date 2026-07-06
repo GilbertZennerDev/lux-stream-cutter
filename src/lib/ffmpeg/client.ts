@@ -1,10 +1,9 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { toBlobURL } from "@ffmpeg/util";
+import coreURL from "@ffmpeg/core?url";
+import wasmURL from "@ffmpeg/core/wasm?url";
 
-// Load ffmpeg-core from unpkg via blob URLs — avoids Vite trying to
-// transform the core JS as a module (which caused 500 on /ffmpeg/ffmpeg-core.js?import).
-const CORE_VERSION = "0.12.6";
-const BASE_URL = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`;
+// Import ffmpeg-core only as emitted asset URLs. This keeps Vite from trying
+// to transform ffmpeg-core.js as app source and avoids external CDN/CORS fetches.
 
 let ffmpegPromise: Promise<FFmpeg> | null = null;
 let logListener: ((msg: string) => void) | null = null;
@@ -20,12 +19,14 @@ export async function getFFmpeg(): Promise<FFmpeg> {
     ffmpeg.on("log", ({ message }) => {
       logListener?.(message);
     });
-    const [coreURL, wasmURL] = await Promise.all([
-      toBlobURL(`${BASE_URL}/ffmpeg-core.js`, "text/javascript"),
-      toBlobURL(`${BASE_URL}/ffmpeg-core.wasm`, "application/wasm"),
-    ]);
-    await ffmpeg.load({ coreURL, wasmURL });
-    return ffmpeg;
+    try {
+      await ffmpeg.load({ coreURL, wasmURL });
+      return ffmpeg;
+    } catch (error) {
+      ffmpeg.terminate();
+      ffmpegPromise = null;
+      throw error;
+    }
   })();
   return ffmpegPromise;
 }
