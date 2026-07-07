@@ -499,21 +499,59 @@ function Dashboard() {
 
               {mode !== "subs-only" && (
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="start">Start</Label>
                     <Input
                       id="start" value={start}
                       onChange={(e) => setStart(e.target.value)}
                       placeholder="MM:SS or HH:MM:SS"
                     />
+                    {sourcePreviewUrl && (
+                      <div className="space-y-1">
+                        <video
+                          ref={startVideoRef}
+                          src={sourcePreviewUrl}
+                          className="w-full rounded-md border bg-black aspect-video"
+                          controls
+                          muted
+                          preload="metadata"
+                          onLoadedMetadata={() => seekTo(startVideoRef, start)}
+                        />
+                        <Button
+                          type="button" size="sm" variant="outline" className="w-full h-7 text-xs"
+                          onClick={() => seekTo(startVideoRef, start)}
+                        >
+                          <Play className="h-3 w-3 mr-1" /> Preview start
+                        </Button>
+                      </div>
+                    )}
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="end">End</Label>
                     <Input
                       id="end" value={end}
                       onChange={(e) => setEnd(e.target.value)}
                       placeholder="MM:SS or HH:MM:SS"
                     />
+                    {sourcePreviewUrl && (
+                      <div className="space-y-1">
+                        <video
+                          ref={endVideoRef}
+                          src={sourcePreviewUrl}
+                          className="w-full rounded-md border bg-black aspect-video"
+                          controls
+                          muted
+                          preload="metadata"
+                          onLoadedMetadata={() => seekTo(endVideoRef, end)}
+                        />
+                        <Button
+                          type="button" size="sm" variant="outline" className="w-full h-7 text-xs"
+                          onClick={() => seekTo(endVideoRef, end)}
+                        >
+                          <Play className="h-3 w-3 mr-1" /> Preview end
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   <div className="col-span-2 text-xs">
                     {durationInfo.ok ? (
