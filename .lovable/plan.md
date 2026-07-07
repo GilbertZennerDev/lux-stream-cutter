@@ -1,81 +1,21 @@
-## Ziel
-Multi-Tenant Modus mit Gruppen (Mandanten). Nur du (zennergilbert@gmail.com) hast als Super-Admin Zugriff auf ein Admin-Panel, um Gruppen und deren User zu verwalten. Jede Gruppe sieht nur ihre eigenen Aufnahmen. Alle User einer Gruppe haben identische Rechte auf deren Inhalte.
+## Befund
 
-## Datenmodell (Datenbank)
+Die Datenbank enthält den Nutzer `zennergilbert@gmail.com` korrekt als `super_admin` und als Mitglied der aktiven Gruppe `Admin`. Das Problem sitzt sehr wahrscheinlich im App-Code: Die globale Zugangssperre zeigt bei jedem Fehler aus `getMyAccessContext()` dieselbe Meldung wie bei fehlender Gruppe. Dadurch sieht ein Auth-/Server-Function-/RLS-Fehler für dich fälschlich wie „nicht in Gruppe“ aus.
 
-Neue Tabellen:
-- `groups` — Name, Slug, Notizen, aktiv/inaktiv
-- `group_members` — verknüpft `auth.users` mit `groups`; ein User gehört zu genau einer Gruppe (Unique-Constraint auf user_id)
-- `app_roles` (Enum: `super_admin`)
-- `user_roles` — Super-Admin-Rollen (nur für dich); getrennte Tabelle, um Privilege Escalation zu verhindern
+## Plan
 
-Bestehende Tabelle `recordings`:
-- Neue Spalte `group_id uuid` (Foreign Key auf `groups`)
-- Alle bestehenden Zeilen werden anhand des `user_id` in eine passende Gruppe migriert (bzw. gelöscht, falls keine — Tabelle ist aktuell leer laut vorheriger Prüfung)
+1. **Zugangsprüfung robuster machen**
+   - `getMyAccessContext()` so ändern, dass Fehler beim Rollen-/Gruppen-Lesen nicht still zu `false/null` werden.
+   - Wenn die DB sagt „Rolle vorhanden“, muss `isSuperAdmin` zuverlässig `true` zurückgeben.
 
-Security-Definer-Funktionen:
-- `is_super_admin(uid)` — prüft `user_roles`
-- `current_group_id(uid)` — liefert die Gruppe des Users
-- `has_group_access(uid, group_id)` — true wenn User Mitglied ODER Super-Admin
+2. **Fehlermeldung korrigieren**
+   - In `AuthGate` echte technische Zugriffsfehler getrennt anzeigen statt „Waiting for admin approval“.
+   - „Waiting for admin approval“ nur noch anzeigen, wenn der Server erfolgreich geantwortet hat und wirklich weder Admin-Rolle noch aktive Gruppe vorhanden ist.
 
-## RLS-Policies (überarbeitet)
+3. **Admin-Route absichern und erreichbar machen**
+   - `/admin` nutzt dieselbe geprüfte Access-Query und zeigt bei Admins direkt das Admin Panel.
+   - Der Admin-Link unten rechts erscheint, sobald `isSuperAdmin` erfolgreich erkannt wurde.
 
-`recordings`:
-- SELECT/INSERT/UPDATE/DELETE: erlaubt wenn `has_group_access(auth.uid(), group_id)`
-- Beim Insert wird `group_id` automatisch per Trigger aus `group_members` gesetzt (kein Client-Input)
-- Super-Admin sieht alles
-
-`groups`, `group_members`, `user_roles`:
-- Nur Super-Admin kann verwalten
-- User dürfen ihre eigene Gruppenzugehörigkeit lesen
-
-`storage.objects` (Bucket `recordings`):
-- Pfad wird von `{user_id}/...` auf `{group_id}/...` umgestellt
-- Policies erlauben Zugriff wenn `has_group_access` auf den group_id-Präfix zutrifft
-
-## Super-Admin-Bootstrap
-
-Trigger auf `auth.users`: Wenn eine bestätigte E-Mail exakt `zennergilbert@gmail.com` ist, wird automatisch die `super_admin`-Rolle vergeben (nur für verifizierte E-Mails, wie in der Security-Guidance beschrieben).
-
-## Server-Funktionen (neu, `src/lib/admin.functions.ts`)
-
-Alle mit `requireSupabaseAuth` + Super-Admin-Check:
-- `listGroups`, `createGroup`, `updateGroup`, `deleteGroup`
-- `listGroupMembers(groupId)`
-- `inviteUserToGroup(email, groupId)` — legt User via Auth Admin API an (mit temporärem Passwort oder Magic Link), fügt zu `group_members` hinzu
-- `removeUserFromGroup(userId)`
-- `resetUserPassword(userId)` — sendet Reset-Mail
-
-Diese laden `supabaseAdmin` erst innerhalb des Handlers (nach dem Rollen-Check), gemäß Server-Function-Regeln.
-
-## Registrierung
-
-Public Signup wird deaktiviert. User können sich nur einloggen — Accounts werden ausschließlich vom Super-Admin im Admin-Panel angelegt. Google-Login bleibt aktiv, aber der Google-User muss vom Admin vorher zu einer Gruppe hinzugefügt worden sein; sonst zeigt die App "Kein Zugriff — bitte Admin kontaktieren".
-
-## UI
-
-Neue Route `src/routes/admin.tsx` (nur für Super-Admin sichtbar/erreichbar):
-- Sektion **Gruppen**: Liste, anlegen, umbenennen, löschen
-- Sektion **Detailansicht Gruppe**: Mitglieder-Liste, neuen User per E-Mail hinzufügen (Passwort/Email-Invite), User entfernen, Passwort-Reset-Mail senden
-- Sektion **Aufnahmen pro Gruppe** (optional): Übersicht wie viele Recordings pro Gruppe
-
-Header/Nav:
-- Admin-Link erscheint nur für Super-Admin
-- Für normale User in einer Gruppe: unveränderte UX
-- Für eingeloggte User **ohne** Gruppenzugehörigkeit: Sperrbildschirm "Warte auf Freischaltung durch Admin"
-
-`AuthPage`: "Create account"-Tab wird entfernt/deaktiviert; nur Sign-In (Email + Google).
-
-## Migration bestehender Daten
-- `recordings`-Tabelle ist aktuell leer → keine Datenmigration nötig
-- Storage-Bucket wird geleert (keine relevanten Objekte vorhanden)
-
-## Sicherheitsprinzipien
-- Rollen in separater `user_roles`-Tabelle (nicht auf Profil)
-- `has_role`/`is_super_admin` als SECURITY DEFINER, um Rekursion zu vermeiden
-- Super-Admin-Zuweisung nur bei verifizierter Zieldomain/E-Mail
-- Alle Admin-Server-Funktionen prüfen den Aufrufer serverseitig
-- Storage-Pfade und Recordings via `group_id`, nicht `user_id`
-
-## Offene Frage
-Beim Anlegen eines Users: Willst du (a) ein temporäres Passwort setzen und dem User mitteilen, oder (b) einen Magic-Link/Invite per E-Mail schicken lassen? Default-Vorschlag: (b) Invite per E-Mail.
+4. **Validierung**
+   - Mit der vorhandenen Browser-Session lokal prüfen, ob nach Login die App nicht mehr blockiert und `/admin` erreichbar ist.
+   - Wenn ein Server-Function-Fehler auftaucht, die konkrete Fehlermeldung sichtbar machen statt sie als Gruppenproblem zu tarnen.
