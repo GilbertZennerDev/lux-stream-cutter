@@ -272,6 +272,15 @@ function RecordingsPage() {
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={r.status !== "ready" || previewMut.isPending}
+                        onClick={() => previewMut.mutate(r)}
+                        title="Preview"
+                      >
+                        <Play className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         disabled={r.status !== "ready" || dl.isPending}
                         onClick={() => dl.mutate(r)}
                       >
