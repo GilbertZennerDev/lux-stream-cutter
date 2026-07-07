@@ -65,14 +65,35 @@ function RecordingsPage() {
     navigate({ to: "/", search: { recording: r.id } as never });
   };
 
-  const [preview, setPreview] = useState<{ url: string; title: string } | null>(null);
+  const [preview, setPreview] = useState<{ url: string; title: string; remuxing?: boolean } | null>(null);
   const previewMut = useMutation({
     mutationFn: async (r: RecordingRow) => {
       const { url } = await getRecordingDownloadUrl({ data: { id: r.id } });
-      setPreview({ url, title: r.title ?? r.storage_path.split("/").pop() ?? "Recording" });
+      const name = r.storage_path.split("/").pop() ?? "Recording";
+      const title = r.title ?? name;
+      const isTs = /\.ts$/i.test(r.storage_path);
+      if (!isTs) {
+        setPreview({ url, title });
+        return;
+      }
+      // Browsers can't play raw MPEG-TS via <video>. Remux to MP4 client-side.
+      setPreview({ url: "", title, remuxing: true });
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+        const blob = await res.blob();
+        const { remuxTsToMp4 } = await import("@/lib/ffmpeg/operations");
+        const mp4 = await remuxTsToMp4(blob);
+        const mp4Url = URL.createObjectURL(new Blob([mp4 as BlobPart], { type: "video/mp4" }));
+        setPreview({ url: mp4Url, title });
+      } catch (err) {
+        setPreview(null);
+        throw err;
+      }
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => toast.error(`Preview failed: ${e.message}`),
   });
+
 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -305,12 +326,26 @@ function RecordingsPage() {
         ))}
       </main>
 
-      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
+      <Dialog
+        open={!!preview}
+        onOpenChange={(o) => {
+          if (!o) {
+            if (preview?.url?.startsWith("blob:")) URL.revokeObjectURL(preview.url);
+            setPreview(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle className="truncate">{preview?.title}</DialogTitle>
           </DialogHeader>
-          {preview && (
+          {preview?.remuxing && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Remuxing .ts to MP4 for preview…
+            </div>
+          )}
+          {preview && preview.url && !preview.remuxing && (
             <video
               src={preview.url}
               controls
@@ -320,6 +355,7 @@ function RecordingsPage() {
           )}
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

@@ -33,6 +33,35 @@ function scaleFilter(perf: PerfOptions): string | null {
   return `scale='min(iw,trunc(oh*a/2)*2)':'min(${h},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
 }
 
+/** Fast remux of an MPEG-TS blob into an MP4 container (no re-encode). */
+export async function remuxTsToMp4(
+  file: File | Blob,
+  onP?: ProgressCb,
+): Promise<Uint8Array> {
+  const ffmpeg = await getFFmpeg();
+  const off = onP ? onProgress(ffmpeg, onP) : () => {};
+  const inputName = "input.ts";
+  const outputName = "input.mp4";
+  await ffmpeg.writeFile(inputName, await fetchFile(file));
+  try {
+    await ffmpeg.exec([
+      "-fflags", "+genpts",
+      "-i", inputName,
+      "-c", "copy",
+      "-bsf:a", "aac_adtstoasc",
+      "-movflags", "+faststart",
+      "-y", outputName,
+    ]);
+    const data = await ffmpeg.readFile(outputName);
+    return data as Uint8Array;
+  } finally {
+    off();
+    try { await ffmpeg.deleteFile(inputName); } catch {}
+    try { await ffmpeg.deleteFile(outputName); } catch {}
+  }
+}
+
+
 export async function cutVideo(
   file: File | Blob,
   startSec: number,
