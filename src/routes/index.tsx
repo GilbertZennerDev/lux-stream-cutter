@@ -741,11 +741,13 @@ function Dashboard() {
       let offset = 0;
       const remapped: SrtCue[] = picked.map((c, i) => {
         const segLen = c.end - c.start;
-        const cue = {
+        const cue: SrtCue = {
           index: i + 1,
           start: offset,
           end: offset + segLen,
           text: c.text,
+          xPct: c.xPct,
+          yPct: c.yPct,
         };
         offset += segLen;
         return cue;
