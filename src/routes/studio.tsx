@@ -158,17 +158,17 @@ function Studio() {
           sizeBytes: snap.blob.size,
         },
       });
-      appendLog(`[REC] Live snapshot uploaded → opening in Cutter`);
-      toast.success("Opening in Cutter", { id: t });
-      navigate({ to: "/", search: { recording: created.id } as never });
+      appendLog(`[REC] Live snapshot saved to Recordings`);
+      toast.success("Snapshot saved — open Recordings in a new tab to cut it", { id: t, duration: 6000 });
     } catch (err) {
       const msg = (err as Error).message;
-      appendLog(`[REC] Copy to Cutter failed: ${msg}`);
-      toast.error(`Copy failed: ${msg}`, { id: t });
+      appendLog(`[REC] Save snapshot failed: ${msg}`);
+      toast.error(`Save failed: ${msg}`, { id: t });
     } finally {
       setCopying(false);
     }
-  }, [appendLog, copying, navigate, url]);
+  }, [appendLog, copying, url]);
+
 
 
   // Auto-start / auto-stop based on schedule
