@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createHmac, timingSafeEqual } from "node:crypto";
+
 import { z } from "zod";
 
 const CORS = {
@@ -45,9 +45,10 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function verifySignature(rawBody: string, signature: string | null): boolean {
+async function verifySignature(rawBody: string, signature: string | null): Promise<boolean> {
   const secret = process.env.WORKER_SIGNING_SECRET ?? "";
   if (!secret || !signature) return false;
+  const { createHmac, timingSafeEqual } = await import("node:crypto");
   const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
   const a = Buffer.from(signature, "utf8");
   const b = Buffer.from(expected, "utf8");
@@ -62,7 +63,7 @@ export const Route = createFileRoute("/api/public/hooks/worker-recording")({
       POST: async ({ request }: { request: Request }) => {
         const raw = await request.text();
         const sig = request.headers.get("x-worker-signature");
-        if (!verifySignature(raw, sig)) {
+        if (!(await verifySignature(raw, sig))) {
           return json({ error: "unauthorized" }, 401);
         }
 
