@@ -126,16 +126,19 @@ function Dashboard() {
         setSourceTitle(title ?? name);
         setRecordingId(id);
         if (transcript && Array.isArray(transcript) && transcript.length > 0) {
-          const preloaded = transcript.map((c, i) => ({
+          const rawPreloaded: SrtCue[] = transcript.map((c, i) => ({
             index: c.index ?? i + 1,
             start: c.start,
             end: c.end,
             text: c.text,
           }));
-          setCues(preloaded);
-          if (transcriptSrt) setSrtText(transcriptSrt);
-          toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB · ${preloaded.length} saved cues`);
+          setRawCues(rawPreloaded);
+          const shortened = shortenCues(rawPreloaded, { maxSentences, maxChars });
+          setCues(shortened);
+          setSrtText(cuesToSrt(shortened));
+          toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB · ${shortened.length} blocks`);
         } else {
+          setRawCues([]);
           toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB`);
         }
       } catch (err) {
