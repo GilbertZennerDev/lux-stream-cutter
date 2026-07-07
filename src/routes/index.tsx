@@ -517,6 +517,78 @@ function Dashboard() {
     setTimeout(() => seekTo(endVideoRef, v), 50);
   };
 
+  const cutFromSelectedCues = async () => {
+    if (!file || isRunning) return;
+    const picked = cues
+      .filter((c) => selectedCues.has(c.index))
+      .sort((a, b) => a.start - b.start);
+    if (picked.length === 0) {
+      toast.error("Select at least one transcript block first");
+      return;
+    }
+    setError(null);
+    setLogs([]);
+    setClipBlob(null);
+    setSubbedBlob(null);
+    setSrtText(null);
+    cancelledRef.current = false;
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const checkCancel = () => { if (cancelledRef.current) throw new Error("Cancelled"); };
+    try {
+      const parsedSegments = picked.map((c) => ({ start: c.start, end: c.end }));
+
+      // Build SRT with timestamps mapped into the concatenated output.
+      let offset = 0;
+      const remapped: SrtCue[] = picked.map((c, i) => {
+        const segLen = c.end - c.start;
+        const cue = {
+          index: i + 1,
+          start: offset,
+          end: offset + segLen,
+          text: c.text,
+        };
+        offset += segLen;
+        return cue;
+      });
+      const srt = cuesToSrt(remapped);
+      setSrtText(srt);
+
+      setStage("cutting");
+      setProgress(0);
+      appendLog(`[CUT] ${picked.length} selected blocks → ${formatSeconds(offset)}`);
+      const cut = await cutAndConcat(file, parsedSegments, setProgress, { lowPerf, maxHeight });
+      checkCancel();
+      const clip = new Blob([cut as BlobPart], { type: "video/mp4" });
+      setClipBlob(clip);
+      setProgress(1);
+
+      setStage("burning");
+      setProgress(0);
+      const subbed = await burnSubtitles(clip, srt, fontSize, setProgress, { lowPerf, maxHeight });
+      checkCancel();
+      setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
+      setProgress(1);
+
+      setStage("done");
+      toast.success(`Cut ${picked.length} blocks with subtitles`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (cancelledRef.current || message === "Cancelled" || (err as Error)?.name === "AbortError") {
+        appendLog("[CANCEL] Stopped");
+        setStage("idle");
+        return;
+      }
+      console.error(err);
+      appendLog(`[ERROR] ${message}`);
+      setError(message);
+      setStage("error");
+      toast.error(message);
+    } finally {
+      abortRef.current = null;
+    }
+  };
+
   const canRun = !!file && !isRunning;
 
 
