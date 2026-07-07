@@ -121,6 +121,56 @@ function Studio() {
     toast.success("Recording stopped");
   }, [appendLog]);
 
+  const copyToCutter = useCallback(async () => {
+    const h = handleRef.current;
+    if (!h || copying) return;
+    const snap = h.snapshotCurrent();
+    if (!snap || snap.blob.size === 0) {
+      toast.error("Nothing recorded yet — wait a few seconds for the first segment");
+      return;
+    }
+    const sessionDate = currentSessionRef.current ?? snap.startedAt.toISOString().slice(0, 10);
+    setCopying(true);
+    const t = toast.loading(`Copying live buffer to Cutter (${(snap.blob.size / 1024 / 1024).toFixed(1)} MB)…`);
+    try {
+      // Use a large offset so live snapshots sort after the normal 5-min chunks.
+      const chunkIndex = 9000 + Math.floor(Date.now() / 1000) % 100000;
+      const created = await createRecording({
+        data: {
+          sessionDate,
+          chunkIndex,
+          startedAt: snap.startedAt.toISOString(),
+          sourceUrl: url,
+          title: `Live snapshot ${new Date().toLocaleTimeString()}`,
+          fileExt: "ts",
+        },
+      });
+      const { error } = await supabase.storage
+        .from("recordings")
+        .uploadToSignedUrl(created.path, created.token, snap.blob, {
+          contentType: "video/mp2t",
+        });
+      if (error) throw error;
+      await markRecordingReady({
+        data: {
+          id: created.id,
+          endedAt: new Date().toISOString(),
+          sizeBytes: snap.blob.size,
+        },
+      });
+      appendLog(`[REC] Live snapshot uploaded → opening in Cutter`);
+      toast.success("Opening in Cutter", { id: t });
+      navigate({ to: "/", search: { recording: created.id } as never });
+    } catch (err) {
+      const msg = (err as Error).message;
+      appendLog(`[REC] Copy to Cutter failed: ${msg}`);
+      toast.error(`Copy failed: ${msg}`, { id: t });
+    } finally {
+      setCopying(false);
+    }
+  }, [appendLog, copying, navigate, url]);
+
+
   // Auto-start / auto-stop based on schedule
   useEffect(() => {
     if (!autoMode) return;
