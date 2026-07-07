@@ -11,6 +11,14 @@ export interface RecorderHandle {
   stop: () => Promise<Blob>;
   /** Snapshot currently buffered bytes as an MPEG-TS blob without stopping. */
   snapshot: () => Promise<Blob>;
+  /**
+   * Snapshot video/audio segments starting at `startIdx` (video segment index)
+   * up to the current end. Returns the delta blob and the new cursor to pass
+   * back next time to get only newly-buffered bytes.
+   */
+  snapshotFrom: (startIdx: number) => Promise<{ blob: Blob; endIdx: number }>;
+  /** Current number of buffered video segments (usable as a cursor). */
+  getVideoSegmentCount: () => number;
   onStatus: (cb: (s: RecorderStatus) => void) => void;
   onLog: (cb: (msg: string) => void) => void;
 }
