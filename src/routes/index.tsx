@@ -102,6 +102,7 @@ function Dashboard() {
   const search = useSearch({ from: "/" });
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
+  const [sourceTitle, setSourceTitle] = useState<string | null>(null);
   const [loadingRecording, setLoadingRecording] = useState<string | null>(null);
 
   // If ?recording=<id> is present, fetch it and load into the pipeline.
@@ -112,13 +113,14 @@ function Dashboard() {
     (async () => {
       try {
         toast.message("Loading recording…");
-        const { url, path } = await getRecordingDownloadUrl({ data: { id } });
+        const { url, path, title } = await getRecordingDownloadUrl({ data: { id } });
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Download failed: ${res.status}`);
         const blob = await res.blob();
         const name = path.split("/").pop() ?? "recording.ts";
         const f = new File([blob], name, { type: "video/mp2t" });
         setFile(f);
+        setSourceTitle(title ?? name);
         toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB`);
       } catch (err) {
         toast.error((err as Error).message);
@@ -128,6 +130,7 @@ function Dashboard() {
       }
     })();
   }, [search.recording, loadingRecording, navigate]);
+
 
   const [start, setStart] = useState("00:00");
   const [end, setEnd] = useState("00:30");
