@@ -180,6 +180,17 @@ function Dashboard() {
   const [srtText, setSrtText] = useState<string | null>(null);
   const [subbedBlob, setSubbedBlob] = useState<Blob | null>(null);
   const [cues, setCues] = useState<SrtCue[]>([]);
+  const [selectedCues, setSelectedCues] = useState<Set<number>>(new Set());
+
+  const toggleCue = (idx: number) =>
+    setSelectedCues((prev) => {
+      const n = new Set(prev);
+      if (n.has(idx)) n.delete(idx);
+      else n.add(idx);
+      return n;
+    });
+  const selectAllCues = () => setSelectedCues(new Set(cues.map((c) => c.index)));
+  const clearSelectedCues = () => setSelectedCues(new Set());
 
   const logRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
