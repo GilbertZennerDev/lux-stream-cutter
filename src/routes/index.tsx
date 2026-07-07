@@ -282,38 +282,40 @@ function Dashboard() {
   const runSnapshot = useCallback(async () => {
     if (snapshotBusy || !snapshotUrl) return;
     setSnapshotBusy(true);
-    setSnapshotProgress("Starting HLS recorder…");
-    const t = toast.loading(`Grabbing ${snapshotSeconds}s from live stream…`);
-    let handle: Awaited<ReturnType<typeof startRecording>> | null = null;
+    setSnapshotProgress("Preparing shared recorder…");
+    const t = toast.loading("Saving live snapshot to Recordings…");
     try {
-      handle = await startRecording(snapshotUrl);
-      handle.onLog((m) => setSnapshotProgress(m));
-      handle.onStatus((s) => {
-        if (s.bytes > 0) {
-          setSnapshotProgress(
-            `Buffering: ${s.segments} segment${s.segments === 1 ? "" : "s"} · ${(s.bytes / 1024 / 1024).toFixed(1)} MB`,
-          );
+      // Ensure the background recorder is running against the configured URL.
+      // If it wasn't already (e.g. Studio was never opened this session),
+      // start it now and wait until at least one segment is buffered so the
+      // first snapshot isn't empty.
+      const before = getSharedRecorderInfo();
+      const wasRunning = before?.url === snapshotUrl;
+      await ensureSharedRecorder(snapshotUrl, (m) => setSnapshotProgress(m));
+      if (!wasRunning) {
+        setSnapshotProgress("Waiting for first segment…");
+        const waitStart = Date.now();
+        while (Date.now() - waitStart < 30_000) {
+          const info = getSharedRecorderInfo();
+          if (info && info.bufferedSegments > 0) break;
+          await new Promise((r) => setTimeout(r, 500));
         }
-      });
-      const secs = Math.max(5, Math.min(300, snapshotSeconds));
-      const started = Date.now();
-      const startedAt = new Date();
-      while (Date.now() - started < secs * 1000) {
-        await new Promise((r) => setTimeout(r, 500));
       }
-      setSnapshotProgress("Finalizing snapshot…");
-      const tsBlob = await handle.stop();
-      handle = null;
-      if (tsBlob.size === 0) throw new Error("No bytes captured — check the URL");
 
-      setSnapshotProgress(`Uploading ${(tsBlob.size / 1024 / 1024).toFixed(1)} MB to Recordings…`);
-      const sessionDate = startedAt.toISOString().slice(0, 10);
+      setSnapshotProgress("Building snapshot…");
+      const delta = await snapshotSharedRecorderDelta();
+      if (!delta || delta.blob.size === 0) {
+        throw new Error("Nothing buffered yet — wait a few seconds and try again");
+      }
+
+      setSnapshotProgress(`Uploading ${(delta.blob.size / 1024 / 1024).toFixed(1)} MB to Recordings…`);
+      const sessionDate = delta.startedAt.toISOString().slice(0, 10);
       const chunkIndex = 9000 + (Math.floor(Date.now() / 1000) % 100000);
       const created = await createRecording({
         data: {
           sessionDate,
           chunkIndex,
-          startedAt: startedAt.toISOString(),
+          startedAt: delta.startedAt.toISOString(),
           sourceUrl: snapshotUrl,
           title: `Live snapshot ${new Date().toLocaleTimeString()}`,
           fileExt: "ts",
@@ -321,29 +323,29 @@ function Dashboard() {
       });
       const { error } = await supabase.storage
         .from("recordings")
-        .uploadToSignedUrl(created.path, created.token, tsBlob, {
+        .uploadToSignedUrl(created.path, created.token, delta.blob, {
           contentType: "video/mp2t",
         });
       if (error) throw error;
       await markRecordingReady({
         data: {
           id: created.id,
-          endedAt: new Date().toISOString(),
-          sizeBytes: tsBlob.size,
+          endedAt: delta.endedAt.toISOString(),
+          sizeBytes: delta.blob.size,
         },
       });
+      setSharedInfo(getSharedRecorderInfo());
       toast.success(
-        `Snapshot saved to Recordings (${(tsBlob.size / 1024 / 1024).toFixed(1)} MB)`,
+        `Snapshot saved (${delta.segments} segment${delta.segments === 1 ? "" : "s"} · ${(delta.blob.size / 1024 / 1024).toFixed(1)} MB)`,
         { id: t, duration: 6000 },
       );
     } catch (err) {
       toast.error(`Snapshot failed: ${(err as Error).message}`, { id: t });
     } finally {
-      try { await handle?.stop(); } catch {}
       setSnapshotBusy(false);
       setSnapshotProgress("");
     }
-  }, [snapshotBusy, snapshotUrl, snapshotSeconds]);
+  }, [snapshotBusy, snapshotUrl]);
 
 
 
