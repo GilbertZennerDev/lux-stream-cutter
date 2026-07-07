@@ -319,9 +319,9 @@ function Studio() {
                   {copying ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
-                    <Send className="h-4 w-4 mr-2" />
+                    <Save className="h-4 w-4 mr-2" />
                   )}
-                  Copy to Cutter
+                  Save snapshot to Recordings
                 </Button>
               )}
               {autoMode && !recording && (
