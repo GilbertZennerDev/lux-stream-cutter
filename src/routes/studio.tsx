@@ -19,6 +19,7 @@ import {
   startScheduledRecording,
   type ScheduledRecorderHandle,
 } from "@/lib/hls/scheduled-recorder";
+import { LivePreview } from "@/components/studio/LivePreview";
 
 const DEFAULT_URL =
   "https://media02.webtvlive.eu/chd-edge/smil:chamber_tv_hd.smil/playlist.m3u8";
@@ -268,6 +269,15 @@ function Studio() {
             </div>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Live preview</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <LivePreview url={url} active={recording} intervalMs={10000} />
+          </CardContent>
+        </Card>
+
 
         <Card>
           <CardHeader className="pb-3">
