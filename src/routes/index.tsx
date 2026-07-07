@@ -499,6 +499,7 @@ function Dashboard() {
       setStage("srt");
       const raw = luxasrJsonToCues(asrResult);
       if (raw.length === 0) throw new Error("LuxASR returned no segments");
+      setRawCues(raw);
       setStage("shortening");
       const shortened = shortenCues(raw, { maxSentences, maxChars });
       setCues(shortened);
