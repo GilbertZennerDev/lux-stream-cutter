@@ -5,6 +5,14 @@ export interface Variant {
   url: string;
   bandwidth: number;
   resolution?: string;
+  audioGroup?: string;
+}
+
+export interface AudioMedia {
+  groupId: string;
+  name: string;
+  url?: string;
+  isDefault: boolean;
 }
 
 export interface MediaPlaylist {
