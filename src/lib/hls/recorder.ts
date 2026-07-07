@@ -9,6 +9,8 @@ export interface RecorderStatus {
 
 export interface RecorderHandle {
   stop: () => Promise<Blob>;
+  /** Snapshot currently buffered bytes as an MPEG-TS blob without stopping. */
+  snapshot: () => Blob;
   onStatus: (cb: (s: RecorderStatus) => void) => void;
   onLog: (cb: (msg: string) => void) => void;
 }
@@ -110,6 +112,10 @@ export async function startRecording(playlistUrl: string): Promise<RecorderHandl
   return {
     onStatus: (cb) => { statusCb = cb; },
     onLog: (cb) => { logCb = cb; },
+    snapshot: () => {
+      const parts: BlobPart[] = chunks.map((u) => u as BlobPart);
+      return new Blob(parts, { type: "video/mp2t" });
+    },
     stop: async () => {
       stopped = true;
       ac.abort();

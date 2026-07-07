@@ -1,6 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Radio, Square, Loader2, Calendar, Scissors, Library, Film } from "lucide-react";
+import { Radio, Square, Loader2, Calendar, Scissors, Library, Film, Send } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { createRecording, markRecordingReady, markRecordingFailed } from "@/lib/recordings.functions";
 import {
   nextSessionWindow,
   isInSession,
@@ -58,11 +60,13 @@ function StudioError({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 function Studio() {
+  const navigate = useNavigate();
   const [url, setUrl] = useState(DEFAULT_URL);
   const [autoMode, setAutoMode] = useState(true);
   const [logs, setLogs] = useState<string[]>([]);
   const [chunkCount, setChunkCount] = useState(0);
   const [recording, setRecording] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [now, setNow] = useState(new Date());
   const handleRef = useRef<ScheduledRecorderHandle | null>(null);
   const currentSessionRef = useRef<string | null>(null);
@@ -116,6 +120,56 @@ function Studio() {
     appendLog("Stopped");
     toast.success("Recording stopped");
   }, [appendLog]);
+
+  const copyToCutter = useCallback(async () => {
+    const h = handleRef.current;
+    if (!h || copying) return;
+    const snap = h.snapshotCurrent();
+    if (!snap || snap.blob.size === 0) {
+      toast.error("Nothing recorded yet — wait a few seconds for the first segment");
+      return;
+    }
+    const sessionDate = currentSessionRef.current ?? snap.startedAt.toISOString().slice(0, 10);
+    setCopying(true);
+    const t = toast.loading(`Copying live buffer to Cutter (${(snap.blob.size / 1024 / 1024).toFixed(1)} MB)…`);
+    try {
+      // Use a large offset so live snapshots sort after the normal 5-min chunks.
+      const chunkIndex = 9000 + Math.floor(Date.now() / 1000) % 100000;
+      const created = await createRecording({
+        data: {
+          sessionDate,
+          chunkIndex,
+          startedAt: snap.startedAt.toISOString(),
+          sourceUrl: url,
+          title: `Live snapshot ${new Date().toLocaleTimeString()}`,
+          fileExt: "ts",
+        },
+      });
+      const { error } = await supabase.storage
+        .from("recordings")
+        .uploadToSignedUrl(created.path, created.token, snap.blob, {
+          contentType: "video/mp2t",
+        });
+      if (error) throw error;
+      await markRecordingReady({
+        data: {
+          id: created.id,
+          endedAt: new Date().toISOString(),
+          sizeBytes: snap.blob.size,
+        },
+      });
+      appendLog(`[REC] Live snapshot uploaded → opening in Cutter`);
+      toast.success("Opening in Cutter", { id: t });
+      navigate({ to: "/", search: { recording: created.id } as never });
+    } catch (err) {
+      const msg = (err as Error).message;
+      appendLog(`[REC] Copy to Cutter failed: ${msg}`);
+      toast.error(`Copy failed: ${msg}`, { id: t });
+    } finally {
+      setCopying(false);
+    }
+  }, [appendLog, copying, navigate, url]);
+
 
   // Auto-start / auto-stop based on schedule
   useEffect(() => {
@@ -259,6 +313,16 @@ function Studio() {
               ) : (
                 <Button onClick={stopNow} variant="destructive">
                   <Square className="h-4 w-4 mr-2" /> Stop
+                </Button>
+              )}
+              {recording && (
+                <Button variant="secondary" onClick={copyToCutter} disabled={copying}>
+                  {copying ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4 mr-2" />
+                  )}
+                  Copy to Cutter
                 </Button>
               )}
               {autoMode && !recording && (

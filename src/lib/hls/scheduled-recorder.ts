@@ -27,6 +27,8 @@ export interface ScheduledRecorderHandle {
   /** Number of chunks started so far (includes any currently in flight). */
   getChunkCount: () => number;
   isRunning: () => boolean;
+  /** Snapshot bytes buffered in the current in-flight chunk (null if none). */
+  snapshotCurrent: () => { blob: Blob; startedAt: Date; chunkIndex: number } | null;
 }
 
 /**
@@ -143,6 +145,14 @@ export function startScheduledRecording(
   return {
     isRunning: () => !stopped,
     getChunkCount: () => chunkIndex + 1,
+    snapshotCurrent: () => {
+      if (!current) return null;
+      return {
+        blob: current.snapshot(),
+        startedAt: currentStartedAt,
+        chunkIndex,
+      };
+    },
     stop: async () => {
       if (stopped) return;
       stopped = true;
