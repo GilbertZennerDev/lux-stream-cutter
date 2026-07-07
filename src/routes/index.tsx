@@ -106,11 +106,14 @@ function Dashboard() {
   const [sourceTitle, setSourceTitle] = useState<string | null>(null);
   const [loadingRecording, setLoadingRecording] = useState<string | null>(null);
   const [recordingId, setRecordingId] = useState<string | null>(null);
+  const handledRecordingRef = useRef<string | null>(null);
 
   // If ?recording=<id> is present, fetch it and load into the pipeline.
   useEffect(() => {
     const id = search.recording;
-    if (!id || loadingRecording === id) return;
+    if (!id) return;
+    if (handledRecordingRef.current === id) return;
+    handledRecordingRef.current = id;
     setLoadingRecording(id);
     (async () => {
       try {
@@ -142,13 +145,16 @@ function Dashboard() {
           toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB`);
         }
       } catch (err) {
+        handledRecordingRef.current = null;
         toast.error((err as Error).message);
       } finally {
-        // Clear the search param so we don't re-load on rerender
+        setLoadingRecording(null);
+        // Clear the search param so browser URL is tidy; ref guard prevents reload.
         navigate({ to: "/", search: {}, replace: true });
       }
     })();
-  }, [search.recording, loadingRecording, navigate]);
+  }, [search.recording, navigate]);
+
 
 
   const [segments, setSegments] = useState<Array<{ start: string; end: string }>>([
