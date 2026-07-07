@@ -1281,16 +1281,47 @@ function Dashboard() {
                       min={14} max={64} step={1} value={[fontSize]}
                       onValueChange={(v) => setFontSize(v[0])}
                     />
-                    <div className="mt-2 rounded-md border bg-black aspect-video flex items-end justify-center p-3 overflow-hidden">
-                      <span
-                        className="font-sans font-semibold text-white text-center leading-tight"
-                        style={{
-                          fontSize: `${fontSize}px`,
-                          textShadow: "0 0 4px #000, 2px 2px 3px #000, -1px -1px 2px #000",
-                        }}
-                      >
-                        Beispill Ennertitlen
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label>Subtitle position &amp; outline</Label>
+                      <span className="text-xs text-muted-foreground">
+                        x {subX}% · y {subY}% · outline {subOutline}px
                       </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Zeih den Text am Preview, oder benotz d'Sliders. Iwwerholl gëtt op déi geschnidde Videosgréisst berechent.
+                    </p>
+                    <SubtitlePreview
+                      xPct={subX}
+                      yPct={subY}
+                      fontSize={fontSize}
+                      outline={subOutline}
+                      onChange={(x, y) => { setSubX(x); setSubY(y); }}
+                    />
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Horizontal (X)</Label>
+                          <span className="text-xs text-muted-foreground">{subX}%</span>
+                        </div>
+                        <Slider min={0} max={100} step={1} value={[subX]} onValueChange={(v) => setSubX(v[0])} />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Vertikal (Y)</Label>
+                          <span className="text-xs text-muted-foreground">{subY}%</span>
+                        </div>
+                        <Slider min={0} max={100} step={1} value={[subY]} onValueChange={(v) => setSubY(v[0])} />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Schwaarze Bord (Outline)</Label>
+                          <span className="text-xs text-muted-foreground">{subOutline}px</span>
+                        </div>
+                        <Slider min={0} max={8} step={1} value={[subOutline]} onValueChange={(v) => setSubOutline(v[0])} />
+                      </div>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
