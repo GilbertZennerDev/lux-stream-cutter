@@ -361,6 +361,10 @@ function Dashboard() {
     });
   const selectAllCues = () => setSelectedCues(new Set(cues.map((c) => c.index)));
   const clearSelectedCues = () => setSelectedCues(new Set());
+  const updateCuePos = (idx: number, patch: { xPct?: number | undefined; yPct?: number | undefined }) =>
+    setCues((prev) => prev.map((c) => (c.index === idx ? { ...c, ...patch } : c)));
+  const resetCuePos = (idx: number) =>
+    setCues((prev) => prev.map((c) => (c.index === idx ? { ...c, xPct: undefined, yPct: undefined } : c)));
 
   const logRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
