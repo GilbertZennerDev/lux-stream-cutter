@@ -1,0 +1,27 @@
+# LuxStream auto-recorder — Fly.io config.
+# Deploy: `fly launch --no-deploy` first (to create the app), then set secrets
+# and `fly deploy`. See README.md.
+app = "luxstream-worker"
+primary_region = "cdg"  # Paris — close to Luxembourg / webtvlive.eu
+
+[build]
+
+[env]
+  # Non-secret config. Override PLAYLIST_URL / CHUNK_MS here if needed.
+  LUXSTREAM_API_BASE = "https://lux-stream-cutter.lovable.app"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+
+# Single always-on machine, no HTTP service needed (worker is outbound-only).
+[processes]
+  app = "node src/index.mjs"
+
+[[services]]
+  internal_port = 0
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
