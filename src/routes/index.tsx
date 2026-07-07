@@ -444,8 +444,8 @@ function Dashboard() {
                 className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg py-8 cursor-pointer hover:bg-muted/40 transition-colors"
               >
                 <Upload className="h-6 w-6 mb-2 text-muted-foreground" />
-                <p className="text-sm">
-                  {file ? file.name : "Click or drop a video file"}
+                <p className="text-sm text-center px-4 break-all">
+                  {file ? (sourceTitle ?? file.name) : "Click or drop a video file"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
                   MP4 / MKV / MOV / TS · recommended ≤ 500 MB
@@ -457,13 +457,19 @@ function Dashboard() {
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) setFile(f);
+                    if (f) {
+                      setFile(f);
+                      setSourceTitle(null);
+                    }
                   }}
                 />
               </label>
               {file && (
                 <p className="text-xs text-muted-foreground mt-2">
                   {(file.size / (1024 * 1024)).toFixed(1)} MB · {file.type || "unknown"}
+                  {sourceTitle && sourceTitle !== file.name && (
+                    <span className="ml-2 font-mono opacity-60">{file.name}</span>
+                  )}
                 </p>
               )}
             </CardContent>
