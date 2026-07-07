@@ -1,6 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Radio, Square, Loader2, Calendar, Scissors, Library, Film } from "lucide-react";
+import { Radio, Square, Loader2, Calendar, Scissors, Library, Film, Send } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { createRecording, markRecordingReady, markRecordingFailed } from "@/lib/recordings.functions";
 import {
   nextSessionWindow,
   isInSession,
