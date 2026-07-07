@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useSearch, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { getRecordingDownloadUrl } from "@/lib/recordings.functions";
+import { getRecordingDownloadUrl, saveRecordingTranscript } from "@/lib/recordings.functions";
 import { Radio, Library, Film } from "lucide-react";
 import {
   CheckCircle2, Circle, Loader2, Upload, Download, Scissors,
