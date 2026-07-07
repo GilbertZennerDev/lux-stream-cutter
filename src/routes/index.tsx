@@ -392,6 +392,9 @@ function Dashboard() {
     } catch { /* ignore */ }
   };
 
+  return (
+
+
 
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b">
