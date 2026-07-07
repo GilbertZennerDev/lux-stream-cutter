@@ -79,14 +79,6 @@ export const listGroups = createServerFn({ method: "GET" })
     }));
   });
 
-const slugify = (s: string) =>
-  s
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60) || `group-${Date.now()}`;
-
 export const createGroup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i) =>
@@ -102,6 +94,13 @@ export const createGroup = createServerFn({ method: "POST" })
       .maybeSingle();
     if (adminError) throw new Error(adminError.message);
     if (!adminRole) throw new Error("Forbidden: super admin required");
+    const slugify = (s: string) =>
+      s
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 60) || `group-${Date.now()}`;
     const base = slugify(data.name);
     let slug = base;
     for (let i = 1; i < 20; i++) {
