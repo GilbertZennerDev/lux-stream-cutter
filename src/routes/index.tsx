@@ -184,14 +184,20 @@ function Dashboard() {
 
   const durationInfo = useMemo(() => {
     try {
-      const s = parseTimeToSeconds(start);
-      const e = parseTimeToSeconds(end);
-      if (e <= s) return { ok: false as const, msg: "End must be after start" };
-      return { ok: true as const, seconds: e - s, label: formatSeconds(e - s) };
+      let total = 0;
+      const parsed: Array<{ start: number; end: number }> = [];
+      for (let i = 0; i < segments.length; i++) {
+        const s = parseTimeToSeconds(segments[i].start);
+        const e = parseTimeToSeconds(segments[i].end);
+        if (e <= s) return { ok: false as const, msg: `Segment ${i + 1}: end must be after start` };
+        total += e - s;
+        parsed.push({ start: s, end: e });
+      }
+      return { ok: true as const, seconds: total, label: formatSeconds(total), parsed };
     } catch (err) {
       return { ok: false as const, msg: (err as Error).message };
     }
-  }, [start, end]);
+  }, [segments]);
 
   const isRunning = stage === "cutting" || stage === "extracting" ||
     stage === "asr" || stage === "srt" || stage === "shortening" || stage === "burning";
