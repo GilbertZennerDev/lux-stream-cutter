@@ -1083,40 +1083,99 @@ function Dashboard() {
                   </div>
                   <ScrollArea className="h-72 rounded-md border">
                     <ul className="divide-y">
-                      {cues.map((c) => (
-                        <li key={c.index} className="p-2 hover:bg-muted/40 group">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Checkbox
-                              checked={selectedCues.has(c.index)}
-                              onCheckedChange={() => toggleCue(c.index)}
-                              aria-label={`Select block ${c.index}`}
-                            />
-                            <button
-                              type="button"
-                              className="text-[11px] font-mono text-primary hover:underline"
-                              onClick={() => seekTo(startVideoRef, formatSeconds(c.start))}
-                              title="Preview at this timestamp"
-                            >
-                              {formatSeconds(c.start)} – {formatSeconds(c.end)}
-                            </button>
-                            <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                              <Button
-                                size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
-                                onClick={() => setStartFromSeconds(c.start)}
+                      {cues.map((c) => {
+                        const isSelected = selectedCues.has(c.index);
+                        const cx = c.xPct ?? subX;
+                        const cy = c.yPct ?? subY;
+                        const hasOverride = typeof c.xPct === "number" || typeof c.yPct === "number";
+                        return (
+                          <li key={c.index} className="p-2 hover:bg-muted/40 group">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => toggleCue(c.index)}
+                                aria-label={`Select block ${c.index}`}
+                              />
+                              <button
+                                type="button"
+                                className="text-[11px] font-mono text-primary hover:underline"
+                                onClick={() => seekTo(startVideoRef, formatSeconds(c.start))}
+                                title="Preview at this timestamp"
                               >
-                                ▸ Start
-                              </Button>
-                              <Button
-                                size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
-                                onClick={() => setEndFromSeconds(c.end)}
-                              >
-                                End ◂
-                              </Button>
+                                {formatSeconds(c.start)} – {formatSeconds(c.end)}
+                              </button>
+                              {hasOverride && (
+                                <span className="text-[10px] font-mono px-1.5 rounded bg-primary/15 text-primary">
+                                  pos {Math.round(cx)},{Math.round(cy)}
+                                </span>
+                              )}
+                              <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                                <Button
+                                  size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                                  onClick={() => setStartFromSeconds(c.start)}
+                                >
+                                  ▸ Start
+                                </Button>
+                                <Button
+                                  size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                                  onClick={() => setEndFromSeconds(c.end)}
+                                >
+                                  End ◂
+                                </Button>
+                              </div>
                             </div>
-                          </div>
-                          <p className="text-xs leading-snug pl-6">{c.text}</p>
-                        </li>
-                      ))}
+                            <p className="text-xs leading-snug pl-6">{c.text}</p>
+                            {isSelected && (
+                              <div className="mt-2 pl-6 space-y-2 rounded-md border bg-muted/20 p-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] text-muted-foreground">
+                                    Subtitle position for this block
+                                  </span>
+                                  {hasOverride && (
+                                    <Button
+                                      type="button" size="sm" variant="ghost"
+                                      className="h-6 px-2 text-[11px]"
+                                      onClick={() => resetCuePos(c.index)}
+                                    >
+                                      Reset to default
+                                    </Button>
+                                  )}
+                                </div>
+                                <SubtitlePreview
+                                  xPct={cx}
+                                  yPct={cy}
+                                  fontSize={Math.min(fontSize, 28)}
+                                  outline={subOutline}
+                                  sample={c.text.split(/\r?\n/)[0].slice(0, 60) || "…"}
+                                  onChange={(x, y) => updateCuePos(c.index, { xPct: x, yPct: y })}
+                                />
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <div className="flex items-center justify-between">
+                                      <Label className="text-[11px]">X</Label>
+                                      <span className="text-[11px] text-muted-foreground">{Math.round(cx)}%</span>
+                                    </div>
+                                    <Slider
+                                      min={0} max={100} step={1} value={[Math.round(cx)]}
+                                      onValueChange={(v) => updateCuePos(c.index, { xPct: v[0] })}
+                                    />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center justify-between">
+                                      <Label className="text-[11px]">Y</Label>
+                                      <span className="text-[11px] text-muted-foreground">{Math.round(cy)}%</span>
+                                    </div>
+                                    <Slider
+                                      min={0} max={100} step={1} value={[Math.round(cy)]}
+                                      onValueChange={(v) => updateCuePos(c.index, { yPct: v[0] })}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </ScrollArea>
                 </>
