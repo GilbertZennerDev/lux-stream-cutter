@@ -21,7 +21,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 
 import { parseTimeToSeconds, formatSeconds } from "@/lib/subtitles/parseTime";
-import { cutAndConcat, extractAudioMp3, burnSubtitles } from "@/lib/ffmpeg/operations";
+import { cutAndConcat, extractAudioMp3, burnSubtitles, remuxTsToMp4 } from "@/lib/ffmpeg/operations";
 import { onFfmpegLog, cancelFFmpeg } from "@/lib/ffmpeg/client";
 import { luxasrJsonToCues, cuesToSrt, type SrtCue } from "@/lib/subtitles/luxasrToSrt";
 import { shortenCues } from "@/lib/subtitles/shortenSrt";
@@ -89,6 +89,74 @@ async function isAudioSilent(blob: Blob, threshold = 0.005): Promise<boolean> {
   }
 }
 
+function inferVideoMime(fileName: string, responseType?: string | null): string {
+  const cleanType = (responseType ?? "").split(";")[0].trim().toLowerCase();
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "mp4":
+    case "m4v":
+      return "video/mp4";
+    case "mov":
+      return "video/quicktime";
+    case "webm":
+      return "video/webm";
+    case "mkv":
+      return "video/x-matroska";
+    case "ts":
+    case "m2ts":
+      return "video/mp2t";
+    default:
+      if (cleanType && cleanType !== "application/octet-stream" && cleanType !== "binary/octet-stream") {
+        return cleanType;
+      }
+      return cleanType || "video/mp4";
+  }
+}
+
+function isTransportStream(file: File | Blob, fileName = file instanceof File ? file.name : ""): boolean {
+  const type = file.type.toLowerCase();
+  return type === "video/mp2t" || /\.(m2ts|ts)$/i.test(fileName);
+}
+
+function formatDownloadBytes(bytes: number): string {
+  const mb = bytes / 1024 / 1024;
+  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
+  return `${mb.toFixed(1)} MB`;
+}
+
+async function downloadRecordingFile(
+  url: string,
+  fileName: string,
+  onProgress: (label: string) => void,
+): Promise<File> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+  const type = inferVideoMime(fileName, res.headers.get("content-type"));
+  const total = Number(res.headers.get("content-length") ?? "0");
+
+  if (!res.body) {
+    const blob = await res.blob();
+    return new File([blob], fileName, { type: inferVideoMime(fileName, blob.type) });
+  }
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    chunks.push(value);
+    received += value.byteLength;
+    onProgress(
+      total > 0
+        ? `Downloading ${formatDownloadBytes(received)} / ${formatDownloadBytes(total)}`
+        : `Downloading ${formatDownloadBytes(received)}`,
+    );
+  }
+  return new File(chunks.map((chunk) => chunk as BlobPart), fileName, { type });
+}
+
 
 const STAGES: { key: Stage; label: string; icon: typeof Circle }[] = [
   { key: "cutting", label: "Cutting", icon: Scissors },
@@ -105,26 +173,45 @@ function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
   const [sourceTitle, setSourceTitle] = useState<string | null>(null);
   const [loadingRecording, setLoadingRecording] = useState<string | null>(null);
+  const [recordingLoadLabel, setRecordingLoadLabel] = useState<string | null>(null);
   const [recordingId, setRecordingId] = useState<string | null>(null);
+  const [sourcePreviewBlob, setSourcePreviewBlob] = useState<Blob | null>(null);
+  const [sourcePreviewError, setSourcePreviewError] = useState<string | null>(null);
+  const [isPreparingSourcePreview, setIsPreparingSourcePreview] = useState(false);
   const handledRecordingRef = useRef<string | null>(null);
 
   // If ?recording=<id> is present, fetch it and load into the pipeline.
   useEffect(() => {
     const id = search.recording;
-    if (!id) return;
+    if (!id) {
+      handledRecordingRef.current = null;
+      return;
+    }
     if (handledRecordingRef.current === id) return;
     handledRecordingRef.current = id;
     setLoadingRecording(id);
+    setRecordingLoadLabel("Preparing recording…");
+    setFile(null);
+    setSourceTitle(null);
+    setRecordingId(null);
+    setRawCues([]);
+    setCues([]);
+    setSelectedCues(new Set());
+    setSrtText(null);
+    setClipBlob(null);
+    setAudioBlob(null);
+    setSubbedBlob(null);
+    setSourcePreviewBlob(null);
+    setSourcePreviewError(null);
+    setError(null);
     (async () => {
       try {
         toast.message("Loading recording…");
+        setRecordingLoadLabel("Creating download link…");
         const { url, path, title, transcript, transcriptSrt } =
           await getRecordingDownloadUrl({ data: { id } });
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-        const blob = await res.blob();
         const name = path.split("/").pop() ?? "recording.ts";
-        const f = new File([blob], name, { type: "video/mp2t" });
+        const f = await downloadRecordingFile(url, name, setRecordingLoadLabel);
         setFile(f);
         setSourceTitle(title ?? name);
         setRecordingId(id);
@@ -149,6 +236,7 @@ function Dashboard() {
         toast.error((err as Error).message);
       } finally {
         setLoadingRecording(null);
+        setRecordingLoadLabel(null);
         // Clear the search param so browser URL is tidy; ref guard prevents reload.
         navigate({ to: "/", search: {}, replace: true });
       }
@@ -646,14 +734,44 @@ function Dashboard() {
   );
 
   const sourcePreviewUrl = useMemo(
-    () => (file ? URL.createObjectURL(file) : null),
-    [file],
+    () => {
+      if (file && isTransportStream(file) && !sourcePreviewBlob) return null;
+      const previewSource = sourcePreviewBlob ?? file;
+      return previewSource ? URL.createObjectURL(previewSource) : null;
+    },
+    [file, sourcePreviewBlob],
   );
   useEffect(() => {
     return () => {
       if (sourcePreviewUrl) URL.revokeObjectURL(sourcePreviewUrl);
     };
   }, [sourcePreviewUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSourcePreviewBlob(null);
+    setSourcePreviewError(null);
+    setIsPreparingSourcePreview(false);
+    if (!file || !isTransportStream(file)) return;
+
+    setIsPreparingSourcePreview(true);
+    remuxTsToMp4(file)
+      .then((mp4) => {
+        if (cancelled) return;
+        setSourcePreviewBlob(new Blob([mp4 as BlobPart], { type: "video/mp4" }));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setSourcePreviewError((err as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setIsPreparingSourcePreview(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
 
   const startVideoRef = useRef<HTMLVideoElement>(null);
   const endVideoRef = useRef<HTMLVideoElement>(null);
@@ -726,9 +844,13 @@ function Dashboard() {
                 htmlFor="video-input"
                 className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg py-8 cursor-pointer hover:bg-muted/40 transition-colors"
               >
-                <Upload className="h-6 w-6 mb-2 text-muted-foreground" />
+                {loadingRecording ? (
+                  <Loader2 className="h-6 w-6 mb-2 text-muted-foreground animate-spin" />
+                ) : (
+                  <Upload className="h-6 w-6 mb-2 text-muted-foreground" />
+                )}
                 <p className="text-sm text-center px-4 break-all">
-                  {file ? (sourceTitle ?? file.name) : "Click or drop a video file"}
+                  {loadingRecording ? (recordingLoadLabel ?? "Loading recording…") : file ? (sourceTitle ?? file.name) : "Click or drop a video file"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
                   MP4 / MKV / MOV / TS · recommended ≤ 500 MB
@@ -743,6 +865,8 @@ function Dashboard() {
                     if (f) {
                       setFile(f);
                       setSourceTitle(null);
+                      setRecordingId(null);
+                      handledRecordingRef.current = null;
                     }
                   }}
                 />
@@ -753,6 +877,16 @@ function Dashboard() {
                   {sourceTitle && sourceTitle !== file.name && (
                     <span className="ml-2 font-mono opacity-60">{file.name}</span>
                   )}
+                </p>
+              )}
+              {isPreparingSourcePreview && (
+                <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Preparing source preview…
+                </p>
+              )}
+              {sourcePreviewError && (
+                <p className="text-xs text-destructive mt-2">
+                  Source preview failed: {sourcePreviewError}
                 </p>
               )}
             </CardContent>
