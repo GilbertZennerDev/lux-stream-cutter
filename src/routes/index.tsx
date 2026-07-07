@@ -578,6 +578,69 @@ function Dashboard() {
 
           <Card>
             <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center justify-between">
+                <span>Find cut points via transcript</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!file || isRunning}
+                  onClick={transcribeForCuts}
+                >
+                  {isRunning && (stage === "extracting" || stage === "asr" || stage === "srt" || stage === "shortening") ? (
+                    <><Loader2 className="h-3 w-3 mr-2 animate-spin" /> Transcribing…</>
+                  ) : (
+                    <><FileText className="h-3 w-3 mr-2" /> Transcribe</>
+                  )}
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {cues.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Transcribe the full clip to see subtitle blocks with timestamps.
+                  Click any block to jump the previews, or use its buttons to set start / end.
+                </p>
+              ) : (
+                <ScrollArea className="h-72 rounded-md border">
+                  <ul className="divide-y">
+                    {cues.map((c) => (
+                      <li key={c.index} className="p-2 hover:bg-muted/40 group">
+                        <div className="flex items-center gap-2 mb-1">
+                          <button
+                            type="button"
+                            className="text-[11px] font-mono text-primary hover:underline"
+                            onClick={() => seekTo(startVideoRef, formatSeconds(c.start))}
+                            title="Preview at this timestamp"
+                          >
+                            {formatSeconds(c.start)} – {formatSeconds(c.end)}
+                          </button>
+                          <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                              onClick={() => setStartFromSeconds(c.start)}
+                            >
+                              ▸ Start
+                            </Button>
+                            <Button
+                              size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                              onClick={() => setEndFromSeconds(c.end)}
+                            >
+                              End ◂
+                            </Button>
+                          </div>
+                        </div>
+                        <p className="text-xs leading-snug">{c.text}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+
+
+          <Card>
+            <CardHeader className="pb-3">
               <CardTitle className="text-base">2. Cut &amp; options</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
