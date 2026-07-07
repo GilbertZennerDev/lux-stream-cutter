@@ -60,11 +60,13 @@ function StudioError({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 function Studio() {
+  const navigate = useNavigate();
   const [url, setUrl] = useState(DEFAULT_URL);
   const [autoMode, setAutoMode] = useState(true);
   const [logs, setLogs] = useState<string[]>([]);
   const [chunkCount, setChunkCount] = useState(0);
   const [recording, setRecording] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [now, setNow] = useState(new Date());
   const handleRef = useRef<ScheduledRecorderHandle | null>(null);
   const currentSessionRef = useRef<string | null>(null);
