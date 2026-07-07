@@ -28,6 +28,17 @@ const MarkFailedInput = z.object({
 
 const IdInput = z.object({ id: z.string().uuid() });
 
+const SaveTranscriptInput = z.object({
+  id: z.string().uuid(),
+  cues: z.array(z.object({
+    index: z.number().int().nonnegative().optional(),
+    start: z.number(),
+    end: z.number(),
+    text: z.string(),
+  })),
+  srt: z.string(),
+});
+
 /** Create a DB row for a new chunk and return a signed upload URL for it. */
 export const createRecording = createServerFn({ method: "POST" })
   .inputValidator((input) => CreateInput.parse(input))
@@ -101,6 +112,9 @@ export interface RecordingRow {
   title: string | null;
   error: string | null;
   created_at: string;
+  transcript: Array<{ index?: number; start: number; end: number; text: string }> | null;
+  transcript_srt: string | null;
+  transcribed_at: string | null;
 }
 
 export const listRecordings = createServerFn({ method: "GET" }).handler(
@@ -123,7 +137,7 @@ export const getRecordingDownloadUrl = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: row, error } = await supabaseAdmin
       .from("recordings")
-      .select("storage_path, status, title")
+      .select("storage_path, status, title, transcript, transcript_srt, transcribed_at")
       .eq("id", data.id)
       .single();
     if (error) throw new Error(error.message);
@@ -132,7 +146,30 @@ export const getRecordingDownloadUrl = createServerFn({ method: "POST" })
       .from(RECORDINGS_BUCKET)
       .createSignedUrl(row.storage_path, DOWNLOAD_EXPIRES_SEC);
     if (sErr) throw new Error(sErr.message);
-    return { url: signed.signedUrl, path: row.storage_path, title: row.title as string | null };
+    return {
+      url: signed.signedUrl,
+      path: row.storage_path,
+      title: row.title as string | null,
+      transcript: (row.transcript ?? null) as RecordingRow["transcript"],
+      transcriptSrt: (row.transcript_srt ?? null) as string | null,
+      transcribedAt: (row.transcribed_at ?? null) as string | null,
+    };
+  });
+
+export const saveRecordingTranscript = createServerFn({ method: "POST" })
+  .inputValidator((input) => SaveTranscriptInput.parse(input))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
+      .from("recordings")
+      .update({
+        transcript: data.cues,
+        transcript_srt: data.srt,
+        transcribed_at: new Date().toISOString(),
+      })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 
