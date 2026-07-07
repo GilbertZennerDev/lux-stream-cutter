@@ -47,11 +47,9 @@ export function AuthPage() {
           <div className="mx-auto h-11 w-11 rounded-md bg-primary text-primary-foreground grid place-items-center">
             <Scissors className="h-5 w-5" />
           </div>
-          <CardTitle className="text-lg">
-            {mode === "signin" ? "Sign in to LuxStream" : "Create an account"}
-          </CardTitle>
+          <CardTitle className="text-lg">Sign in to LuxStream</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Shared workspace — every signed-in user sees the same recordings library.
+            Accounts are created by your administrator. Contact them if you don't have access yet.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
