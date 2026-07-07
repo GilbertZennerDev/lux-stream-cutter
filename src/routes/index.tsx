@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { parseTimeToSeconds, formatSeconds } from "@/lib/subtitles/parseTime";
 import { cutVideo, extractAudioMp3, burnSubtitles } from "@/lib/ffmpeg/operations";
 import { onFfmpegLog, cancelFFmpeg } from "@/lib/ffmpeg/client";
-import { luxasrJsonToCues, cuesToSrt } from "@/lib/subtitles/luxasrToSrt";
+import { luxasrJsonToCues, cuesToSrt, type SrtCue } from "@/lib/subtitles/luxasrToSrt";
 import { shortenCues } from "@/lib/subtitles/shortenSrt";
 import { RecorderCard } from "@/components/dashboard/RecorderCard";
 
