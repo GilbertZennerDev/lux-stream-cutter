@@ -63,6 +63,70 @@ function RecordingsPage() {
     navigate({ to: "/", search: { recording: r.id } as never });
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ name: string; done: number; total: number } | null>(null);
+
+  const upload = useMutation({
+    mutationFn: async (files: File[]) => {
+      const rows = data ?? [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const now = new Date();
+        const sessionDate = new Date(file.lastModified || now).toISOString().slice(0, 10);
+        const existingForDate = rows.filter((r) => r.session_date === sessionDate);
+        const maxIdx = existingForDate.reduce((m, r) => Math.max(m, r.chunk_index), -1);
+        const chunkIndex = maxIdx + 1 + i;
+        const ext = (file.name.split(".").pop() || "mp4").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) || "mp4";
+        setUploadProgress({ name: file.name, done: i, total: files.length });
+        const created = await createRecording({
+          data: {
+            sessionDate,
+            chunkIndex,
+            startedAt: new Date(file.lastModified || now).toISOString(),
+            title: file.name,
+            fileExt: ext,
+          },
+        });
+        try {
+          const { error } = await supabase.storage
+            .from(RECORDINGS_BUCKET)
+            .uploadToSignedUrl(created.path, created.token, file, {
+              contentType: file.type || "video/mp4",
+            });
+          if (error) throw error;
+          await markRecordingReady({
+            data: {
+              id: created.id,
+              endedAt: new Date().toISOString(),
+              sizeBytes: file.size,
+            },
+          });
+        } catch (err) {
+          await markRecordingFailed({
+            data: { id: created.id, error: (err as Error).message.slice(0, 500) },
+          }).catch(() => {});
+          throw err;
+        }
+      }
+    },
+    onSuccess: (_, files) => {
+      toast.success(`Uploaded ${files.length} file${files.length === 1 ? "" : "s"}`);
+      qc.invalidateQueries({ queryKey: ["recordings"] });
+    },
+    onError: (e: Error) => toast.error(`Upload failed: ${e.message}`),
+    onSettled: () => setUploadProgress(null),
+  });
+
+  const onFilesPicked = (list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    const files = Array.from(list).filter((f) => f.type.startsWith("video/") || /\.(mp4|mov|mkv|webm|ts|m4v|avi)$/i.test(f.name));
+    if (files.length === 0) {
+      toast.error("Please select video files");
+      return;
+    }
+    upload.mutate(files);
+  };
+
   const grouped = groupBySession(data ?? []);
 
   return (
