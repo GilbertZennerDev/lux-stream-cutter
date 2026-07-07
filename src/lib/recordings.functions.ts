@@ -112,6 +112,9 @@ export interface RecordingRow {
   title: string | null;
   error: string | null;
   created_at: string;
+  transcript: Array<{ index?: number; start: number; end: number; text: string }> | null;
+  transcript_srt: string | null;
+  transcribed_at: string | null;
 }
 
 export const listRecordings = createServerFn({ method: "GET" }).handler(
