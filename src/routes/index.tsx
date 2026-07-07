@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { parseTimeToSeconds, formatSeconds } from "@/lib/subtitles/parseTime";
 import { cutVideo, extractAudioMp3, burnSubtitles } from "@/lib/ffmpeg/operations";
 import { onFfmpegLog, cancelFFmpeg } from "@/lib/ffmpeg/client";
-import { luxasrJsonToCues, cuesToSrt } from "@/lib/subtitles/luxasrToSrt";
+import { luxasrJsonToCues, cuesToSrt, type SrtCue } from "@/lib/subtitles/luxasrToSrt";
 import { shortenCues } from "@/lib/subtitles/shortenSrt";
 import { RecorderCard } from "@/components/dashboard/RecorderCard";
 
@@ -151,6 +151,7 @@ function Dashboard() {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [srtText, setSrtText] = useState<string | null>(null);
   const [subbedBlob, setSubbedBlob] = useState<Blob | null>(null);
+  const [cues, setCues] = useState<SrtCue[]>([]);
 
   const logRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -348,7 +349,107 @@ function Dashboard() {
     }
   };
 
+  const transcribeForCuts = async () => {
+    if (!file || isRunning) return;
+    setError(null);
+    setLogs([]);
+    setCues([]);
+    setSrtText(null);
+    setAudioBlob(null);
+    cancelledRef.current = false;
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const checkCancel = () => { if (cancelledRef.current) throw new Error("Cancelled"); };
+    try {
+      setStage("extracting");
+      setProgress(0);
+      const audioBytes = await extractAudioMp3(file, setProgress, { lowPerf });
+      checkCancel();
+      const audio = new Blob([audioBytes as BlobPart], { type: "audio/mpeg" });
+      setAudioBlob(audio);
+      setProgress(1);
+
+      setStage("asr");
+      setProgress(0);
+      appendLog(`[ASR] Uploading ${(audio.size / 1024).toFixed(0)} KB to LuxASR…`);
+      const submitRes = await fetch("/api/asr", {
+        method: "POST",
+        headers: { "content-type": "audio/mpeg", "x-filename": "clip.mp3" },
+        body: audio,
+        signal: ac.signal,
+      });
+      if (!submitRes.ok) {
+        const body = await submitRes.json().catch(() => ({ error: submitRes.statusText }));
+        throw new Error(`LuxASR: ${body.error ?? submitRes.statusText}`);
+      }
+      const { jobId } = (await submitRes.json()) as { jobId: string };
+      appendLog(`[ASR] Job ${jobId} submitted, polling…`);
+
+      const startedAt = Date.now();
+      const MAX_MS = 15 * 60 * 1000;
+      const STALL_MS = 3 * 60 * 1000;
+      let asrResult: unknown = null;
+      let lastStatus = "";
+      let lastProgressAt = Date.now();
+      while (true) {
+        checkCancel();
+        if (Date.now() - startedAt > MAX_MS) throw new Error("LuxASR polling timed out (15 min)");
+        if (Date.now() - lastProgressAt > STALL_MS)
+          throw new Error(`LuxASR stuck in "${lastStatus || "pending"}" for 3 min — aborting`);
+        await new Promise((r) => setTimeout(r, 3000));
+        checkCancel();
+        const pollRes = await fetch(`/api/asr?jobId=${encodeURIComponent(jobId)}`, { signal: ac.signal });
+        if (!pollRes.ok) {
+          const body = await pollRes.json().catch(() => ({ error: pollRes.statusText }));
+          throw new Error(`LuxASR: ${body.error ?? pollRes.statusText}`);
+        }
+        const p = (await pollRes.json()) as { status: string; result?: unknown };
+        if (p.status === "completed") { asrResult = p.result; break; }
+        if (p.status !== lastStatus) {
+          lastStatus = p.status;
+          lastProgressAt = Date.now();
+          appendLog(`[ASR] status: ${p.status}`);
+        }
+      }
+
+      setStage("srt");
+      const raw = luxasrJsonToCues(asrResult);
+      if (raw.length === 0) throw new Error("LuxASR returned no segments");
+      setStage("shortening");
+      const shortened = shortenCues(raw, { maxSentences, maxChars });
+      setCues(shortened);
+      setSrtText(cuesToSrt(shortened));
+      appendLog(`[CUES] ${shortened.length} blocks ready — pick your cut points below`);
+      setStage("done");
+      toast.success(`${shortened.length} subtitle blocks — click a block to set start/end`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (cancelledRef.current || message === "Cancelled" || (err as Error)?.name === "AbortError") {
+        appendLog("[CANCEL] Transcription stopped");
+        setStage("idle");
+        return;
+      }
+      console.error(err);
+      appendLog(`[ERROR] ${message}`);
+      setError(message);
+      setStage("error");
+      toast.error(message);
+    } finally {
+      abortRef.current = null;
+    }
+  };
+
+  const setStartFromSeconds = (t: number) => {
+    setStart(formatSeconds(t));
+    setTimeout(() => seekTo(startVideoRef, formatSeconds(t)), 50);
+  };
+  const setEndFromSeconds = (t: number) => {
+    setEnd(formatSeconds(t));
+    setTimeout(() => seekTo(endVideoRef, formatSeconds(t)), 50);
+  };
+
   const canRun = !!file && !isRunning;
+
 
 
   const download = (blob: Blob | null, name: string) => {
@@ -474,6 +575,69 @@ function Dashboard() {
               )}
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center justify-between">
+                <span>Find cut points via transcript</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!file || isRunning}
+                  onClick={transcribeForCuts}
+                >
+                  {isRunning && (stage === "extracting" || stage === "asr" || stage === "srt" || stage === "shortening") ? (
+                    <><Loader2 className="h-3 w-3 mr-2 animate-spin" /> Transcribing…</>
+                  ) : (
+                    <><FileText className="h-3 w-3 mr-2" /> Transcribe</>
+                  )}
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {cues.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Transcribe the full clip to see subtitle blocks with timestamps.
+                  Click any block to jump the previews, or use its buttons to set start / end.
+                </p>
+              ) : (
+                <ScrollArea className="h-72 rounded-md border">
+                  <ul className="divide-y">
+                    {cues.map((c) => (
+                      <li key={c.index} className="p-2 hover:bg-muted/40 group">
+                        <div className="flex items-center gap-2 mb-1">
+                          <button
+                            type="button"
+                            className="text-[11px] font-mono text-primary hover:underline"
+                            onClick={() => seekTo(startVideoRef, formatSeconds(c.start))}
+                            title="Preview at this timestamp"
+                          >
+                            {formatSeconds(c.start)} – {formatSeconds(c.end)}
+                          </button>
+                          <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                              onClick={() => setStartFromSeconds(c.start)}
+                            >
+                              ▸ Start
+                            </Button>
+                            <Button
+                              size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                              onClick={() => setEndFromSeconds(c.end)}
+                            >
+                              End ◂
+                            </Button>
+                          </div>
+                        </div>
+                        <p className="text-xs leading-snug">{c.text}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+
 
           <Card>
             <CardHeader className="pb-3">
