@@ -126,16 +126,19 @@ function Dashboard() {
         setSourceTitle(title ?? name);
         setRecordingId(id);
         if (transcript && Array.isArray(transcript) && transcript.length > 0) {
-          const preloaded = transcript.map((c, i) => ({
+          const rawPreloaded: SrtCue[] = transcript.map((c, i) => ({
             index: c.index ?? i + 1,
             start: c.start,
             end: c.end,
             text: c.text,
           }));
-          setCues(preloaded);
-          if (transcriptSrt) setSrtText(transcriptSrt);
-          toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB · ${preloaded.length} saved cues`);
+          setRawCues(rawPreloaded);
+          const shortened = shortenCues(rawPreloaded, { maxSentences, maxChars });
+          setCues(shortened);
+          setSrtText(cuesToSrt(shortened));
+          toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB · ${shortened.length} blocks`);
         } else {
+          setRawCues([]);
           toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB`);
         }
       } catch (err) {
@@ -181,6 +184,7 @@ function Dashboard() {
   const [srtText, setSrtText] = useState<string | null>(null);
   const [subbedBlob, setSubbedBlob] = useState<Blob | null>(null);
   const [cues, setCues] = useState<SrtCue[]>([]);
+  const [rawCues, setRawCues] = useState<SrtCue[]>([]);
   const [selectedCues, setSelectedCues] = useState<Set<number>>(new Set());
 
   const toggleCue = (idx: number) =>
@@ -417,6 +421,29 @@ function Dashboard() {
     const ac = new AbortController();
     abortRef.current = ac;
     const checkCancel = () => { if (cancelledRef.current) throw new Error("Cancelled"); };
+
+    // Fast path: reuse the stored full transcript, just re-shorten.
+    if (rawCues.length > 0) {
+      try {
+        setStage("shortening");
+        const shortened = shortenCues(rawCues, { maxSentences, maxChars });
+        setCues(shortened);
+        setSrtText(cuesToSrt(shortened));
+        appendLog(`[CUES] Reused stored transcript → ${shortened.length} blocks`);
+        setStage("done");
+        toast.success(`${shortened.length} subtitle blocks (from saved transcript)`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        appendLog(`[ERROR] ${message}`);
+        setError(message);
+        setStage("error");
+        toast.error(message);
+      } finally {
+        abortRef.current = null;
+      }
+      return;
+    }
+
     try {
       setStage("extracting");
       setProgress(0);
@@ -472,6 +499,7 @@ function Dashboard() {
       setStage("srt");
       const raw = luxasrJsonToCues(asrResult);
       if (raw.length === 0) throw new Error("LuxASR returned no segments");
+      setRawCues(raw);
       setStage("shortening");
       const shortened = shortenCues(raw, { maxSentences, maxChars });
       setCues(shortened);
