@@ -32,6 +32,7 @@ export type Database = {
           transcribed_at: string | null
           transcript: Json | null
           transcript_srt: string | null
+          user_id: string
         }
         Insert: {
           chunk_index?: number
@@ -50,6 +51,7 @@ export type Database = {
           transcribed_at?: string | null
           transcript?: Json | null
           transcript_srt?: string | null
+          user_id: string
         }
         Update: {
           chunk_index?: number
@@ -68,6 +70,7 @@ export type Database = {
           transcribed_at?: string | null
           transcript?: Json | null
           transcript_srt?: string | null
+          user_id?: string
         }
         Relationships: []
       }

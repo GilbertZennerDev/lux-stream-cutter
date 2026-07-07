@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const RECORDINGS_BUCKET = "recordings";
 const DOWNLOAD_EXPIRES_SEC = 60 * 60; // 1h
@@ -15,7 +16,6 @@ const CreateInput = z.object({
   fileExt: z.string().regex(/^[a-zA-Z0-9]{1,8}$/).optional(),
   fullCopy: z.boolean().optional(),
 });
-
 
 const MarkReadyInput = z.object({
   id: z.string().uuid(),
@@ -43,14 +43,16 @@ const SaveTranscriptInput = z.object({
 
 /** Create a DB row for a new chunk and return a signed upload URL for it. */
 export const createRecording = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input) => CreateInput.parse(input))
-  .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  .handler(async ({ data, context }) => {
+    const userId = context.userId;
     const ext = data.fileExt ?? "ts";
-    const path = `${data.sessionDate}/${data.startedAt.replace(/[:.]/g, "-")}_${data.chunkIndex}.${ext}`;
-    const { data: row, error } = await supabaseAdmin
+    const path = `${userId}/${data.sessionDate}/${data.startedAt.replace(/[:.]/g, "-")}_${data.chunkIndex}.${ext}`;
+    const { data: row, error } = await context.supabase
       .from("recordings")
       .insert({
+        user_id: userId,
         session_date: data.sessionDate,
         chunk_index: data.chunkIndex,
         started_at: data.startedAt,
@@ -64,7 +66,7 @@ export const createRecording = createServerFn({ method: "POST" })
       .single();
 
     if (error) throw new Error(error.message);
-    const { data: signed, error: sErr } = await supabaseAdmin.storage
+    const { data: signed, error: sErr } = await context.supabase.storage
       .from(RECORDINGS_BUCKET)
       .createSignedUploadUrl(row.storage_path);
     if (sErr) throw new Error(sErr.message);
@@ -77,29 +79,31 @@ export const createRecording = createServerFn({ method: "POST" })
   });
 
 export const markRecordingReady = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input) => MarkReadyInput.parse(input))
-  .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
       .from("recordings")
       .update({
         status: "ready",
         ended_at: data.endedAt,
         size_bytes: data.sizeBytes,
       })
-      .eq("id", data.id);
+      .eq("id", data.id)
+      .eq("user_id", context.userId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const markRecordingFailed = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input) => MarkFailedInput.parse(input))
-  .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin
+  .handler(async ({ data, context }) => {
+    await context.supabase
       .from("recordings")
       .update({ status: "failed", error: data.error })
-      .eq("id", data.id);
+      .eq("id", data.id)
+      .eq("user_id", context.userId);
     return { ok: true };
   });
 
@@ -122,33 +126,33 @@ export interface RecordingRow {
   full_copy: boolean;
 }
 
-
-export const listRecordings = createServerFn({ method: "GET" }).handler(
-  async (): Promise<RecordingRow[]> => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
+export const listRecordings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<RecordingRow[]> => {
+    const { data, error } = await context.supabase
       .from("recordings")
       .select("*")
+      .eq("user_id", context.userId)
       .order("session_date", { ascending: false })
       .order("chunk_index", { ascending: true })
       .limit(500);
     if (error) throw new Error(error.message);
     return (data ?? []) as RecordingRow[];
-  },
-);
+  });
 
 export const getRecordingDownloadUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input) => IdInput.parse(input))
-  .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: row, error } = await supabaseAdmin
+  .handler(async ({ data, context }) => {
+    const { data: row, error } = await context.supabase
       .from("recordings")
       .select("storage_path, status, title, transcript, transcript_srt, transcribed_at")
       .eq("id", data.id)
+      .eq("user_id", context.userId)
       .single();
     if (error) throw new Error(error.message);
     if (row.status !== "ready") throw new Error(`Recording not ready (${row.status})`);
-    const { data: signed, error: sErr } = await supabaseAdmin.storage
+    const { data: signed, error: sErr } = await context.supabase.storage
       .from(RECORDINGS_BUCKET)
       .createSignedUrl(row.storage_path, DOWNLOAD_EXPIRES_SEC);
     if (sErr) throw new Error(sErr.message);
@@ -163,34 +167,39 @@ export const getRecordingDownloadUrl = createServerFn({ method: "POST" })
   });
 
 export const saveRecordingTranscript = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input) => SaveTranscriptInput.parse(input))
-  .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
       .from("recordings")
       .update({
         transcript: data.cues,
         transcript_srt: data.srt,
         transcribed_at: new Date().toISOString(),
       })
-      .eq("id", data.id);
+      .eq("id", data.id)
+      .eq("user_id", context.userId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
-
 export const deleteRecording = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input) => IdInput.parse(input))
-  .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: row, error } = await supabaseAdmin
+  .handler(async ({ data, context }) => {
+    const { data: row, error } = await context.supabase
       .from("recordings")
       .select("storage_path")
       .eq("id", data.id)
+      .eq("user_id", context.userId)
       .single();
     if (error) throw new Error(error.message);
-    await supabaseAdmin.storage.from(RECORDINGS_BUCKET).remove([row.storage_path]);
-    const { error: dErr } = await supabaseAdmin.from("recordings").delete().eq("id", data.id);
+    await context.supabase.storage.from(RECORDINGS_BUCKET).remove([row.storage_path]);
+    const { error: dErr } = await context.supabase
+      .from("recordings")
+      .delete()
+      .eq("id", data.id)
+      .eq("user_id", context.userId);
     if (dErr) throw new Error(dErr.message);
     return { ok: true };
   });
