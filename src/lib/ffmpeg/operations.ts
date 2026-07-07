@@ -138,6 +138,9 @@ export async function cutAndConcat(
     try { await ffmpeg.deleteFile(inputName); } catch {}
     try { await ffmpeg.deleteFile(outputName); } catch {}
   }
+}
+
+
 
 
 export async function extractAudioMp3(
