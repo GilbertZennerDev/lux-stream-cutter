@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -180,6 +181,17 @@ function Dashboard() {
   const [srtText, setSrtText] = useState<string | null>(null);
   const [subbedBlob, setSubbedBlob] = useState<Blob | null>(null);
   const [cues, setCues] = useState<SrtCue[]>([]);
+  const [selectedCues, setSelectedCues] = useState<Set<number>>(new Set());
+
+  const toggleCue = (idx: number) =>
+    setSelectedCues((prev) => {
+      const n = new Set(prev);
+      if (n.has(idx)) n.delete(idx);
+      else n.add(idx);
+      return n;
+    });
+  const selectAllCues = () => setSelectedCues(new Set(cues.map((c) => c.index)));
+  const clearSelectedCues = () => setSelectedCues(new Set());
 
   const logRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -506,6 +518,78 @@ function Dashboard() {
     setTimeout(() => seekTo(endVideoRef, v), 50);
   };
 
+  const cutFromSelectedCues = async () => {
+    if (!file || isRunning) return;
+    const picked = cues
+      .filter((c) => selectedCues.has(c.index))
+      .sort((a, b) => a.start - b.start);
+    if (picked.length === 0) {
+      toast.error("Select at least one transcript block first");
+      return;
+    }
+    setError(null);
+    setLogs([]);
+    setClipBlob(null);
+    setSubbedBlob(null);
+    setSrtText(null);
+    cancelledRef.current = false;
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const checkCancel = () => { if (cancelledRef.current) throw new Error("Cancelled"); };
+    try {
+      const parsedSegments = picked.map((c) => ({ start: c.start, end: c.end }));
+
+      // Build SRT with timestamps mapped into the concatenated output.
+      let offset = 0;
+      const remapped: SrtCue[] = picked.map((c, i) => {
+        const segLen = c.end - c.start;
+        const cue = {
+          index: i + 1,
+          start: offset,
+          end: offset + segLen,
+          text: c.text,
+        };
+        offset += segLen;
+        return cue;
+      });
+      const srt = cuesToSrt(remapped);
+      setSrtText(srt);
+
+      setStage("cutting");
+      setProgress(0);
+      appendLog(`[CUT] ${picked.length} selected blocks → ${formatSeconds(offset)}`);
+      const cut = await cutAndConcat(file, parsedSegments, setProgress, { lowPerf, maxHeight });
+      checkCancel();
+      const clip = new Blob([cut as BlobPart], { type: "video/mp4" });
+      setClipBlob(clip);
+      setProgress(1);
+
+      setStage("burning");
+      setProgress(0);
+      const subbed = await burnSubtitles(clip, srt, fontSize, setProgress, { lowPerf, maxHeight });
+      checkCancel();
+      setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
+      setProgress(1);
+
+      setStage("done");
+      toast.success(`Cut ${picked.length} blocks with subtitles`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (cancelledRef.current || message === "Cancelled" || (err as Error)?.name === "AbortError") {
+        appendLog("[CANCEL] Stopped");
+        setStage("idle");
+        return;
+      }
+      console.error(err);
+      appendLog(`[ERROR] ${message}`);
+      setError(message);
+      setStage("error");
+      toast.error(message);
+    } finally {
+      abortRef.current = null;
+    }
+  };
+
   const canRun = !!file && !isRunning;
 
 
@@ -666,43 +750,76 @@ function Dashboard() {
               {cues.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   Transcribes the <strong>entire</strong> video (no cutting) so you can browse
-                  subtitle blocks with timestamps. Click any block to jump the previews, or use
-                  its buttons to set Start / End on the cut range above.
+                  subtitle blocks with timestamps. Click any block to jump the previews, use
+                  its buttons to set Start / End on the cut range above, or tick the checkbox
+                  on multiple blocks and use <strong>Cut selected</strong> to build a video
+                  from only those blocks (with subtitles).
                 </p>
               ) : (
-                <ScrollArea className="h-72 rounded-md border">
-                  <ul className="divide-y">
-                    {cues.map((c) => (
-                      <li key={c.index} className="p-2 hover:bg-muted/40 group">
-                        <div className="flex items-center gap-2 mb-1">
-                          <button
-                            type="button"
-                            className="text-[11px] font-mono text-primary hover:underline"
-                            onClick={() => seekTo(startVideoRef, formatSeconds(c.start))}
-                            title="Preview at this timestamp"
-                          >
-                            {formatSeconds(c.start)} – {formatSeconds(c.end)}
-                          </button>
-                          <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
-                              onClick={() => setStartFromSeconds(c.start)}
+                <>
+                  <div className="flex items-center justify-between mb-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={selectAllCues}>
+                        Select all
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={clearSelectedCues}>
+                        Clear
+                      </Button>
+                      <span className="text-muted-foreground">
+                        {selectedCues.size} / {cues.length} selected
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={!file || isRunning || selectedCues.size === 0}
+                      onClick={cutFromSelectedCues}
+                    >
+                      {isRunning && (stage === "cutting" || stage === "burning") ? (
+                        <><Loader2 className="h-3 w-3 mr-2 animate-spin" /> Cutting…</>
+                      ) : (
+                        <><Scissors className="h-3 w-3 mr-2" /> Cut selected ({selectedCues.size})</>
+                      )}
+                    </Button>
+                  </div>
+                  <ScrollArea className="h-72 rounded-md border">
+                    <ul className="divide-y">
+                      {cues.map((c) => (
+                        <li key={c.index} className="p-2 hover:bg-muted/40 group">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Checkbox
+                              checked={selectedCues.has(c.index)}
+                              onCheckedChange={() => toggleCue(c.index)}
+                              aria-label={`Select block ${c.index}`}
+                            />
+                            <button
+                              type="button"
+                              className="text-[11px] font-mono text-primary hover:underline"
+                              onClick={() => seekTo(startVideoRef, formatSeconds(c.start))}
+                              title="Preview at this timestamp"
                             >
-                              ▸ Start
-                            </Button>
-                            <Button
-                              size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
-                              onClick={() => setEndFromSeconds(c.end)}
-                            >
-                              End ◂
-                            </Button>
+                              {formatSeconds(c.start)} – {formatSeconds(c.end)}
+                            </button>
+                            <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                              <Button
+                                size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                                onClick={() => setStartFromSeconds(c.start)}
+                              >
+                                ▸ Start
+                              </Button>
+                              <Button
+                                size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                                onClick={() => setEndFromSeconds(c.end)}
+                              >
+                                End ◂
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                        <p className="text-xs leading-snug">{c.text}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </ScrollArea>
+                          <p className="text-xs leading-snug pl-6">{c.text}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </ScrollArea>
+                </>
               )}
             </CardContent>
           </Card>
