@@ -28,6 +28,9 @@ export type Database = {
           status: string
           storage_path: string
           title: string | null
+          transcribed_at: string | null
+          transcript: Json | null
+          transcript_srt: string | null
         }
         Insert: {
           chunk_index?: number
@@ -42,6 +45,9 @@ export type Database = {
           status?: string
           storage_path: string
           title?: string | null
+          transcribed_at?: string | null
+          transcript?: Json | null
+          transcript_srt?: string | null
         }
         Update: {
           chunk_index?: number
@@ -56,6 +62,9 @@ export type Database = {
           status?: string
           storage_path?: string
           title?: string | null
+          transcribed_at?: string | null
+          transcript?: Json | null
+          transcript_srt?: string | null
         }
         Relationships: []
       }
