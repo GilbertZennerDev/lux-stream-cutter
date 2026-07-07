@@ -25,7 +25,7 @@ import { cutAndConcat, extractAudioMp3, burnSubtitles } from "@/lib/ffmpeg/opera
 import { onFfmpegLog, cancelFFmpeg } from "@/lib/ffmpeg/client";
 import { luxasrJsonToCues, cuesToSrt, type SrtCue } from "@/lib/subtitles/luxasrToSrt";
 import { shortenCues } from "@/lib/subtitles/shortenSrt";
-import { RecorderCard } from "@/components/dashboard/RecorderCard";
+
 
 const indexSearchSchema = z.object({
   recording: z.string().uuid().optional(),
