@@ -191,13 +191,29 @@ function Dashboard() {
   const [isPreparingSourcePreview, setIsPreparingSourcePreview] = useState(false);
   const handledRecordingRef = useRef<string | null>(null);
 
-  // Live snapshot from an HLS URL directly into the Source Video slot
-  const [snapshotUrl, setSnapshotUrl] = useState(
-    "https://media02.webtvlive.eu/chd-edge/smil:chamber_tv_hd.smil/playlist.m3u8",
-  );
-  const [snapshotSeconds, setSnapshotSeconds] = useState(30);
+  // Snapshot the running shared HLS recorder (URL configured in Studio, or
+  // the one the Cutter itself starts on first snapshot).
+  const [snapshotUrl, setSnapshotUrl] = useState(DEFAULT_STREAM_URL);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [snapshotProgress, setSnapshotProgress] = useState<string>("");
+  const [sharedInfo, setSharedInfo] = useState<ReturnType<typeof getSharedRecorderInfo>>(null);
+
+  // Hydrate URL from the shared store (Studio writes it there).
+  useEffect(() => {
+    const saved = getSharedStreamUrl();
+    if (saved) setSnapshotUrl(saved);
+  }, []);
+  useEffect(() => {
+    if (snapshotUrl) setSharedStreamUrl(snapshotUrl);
+  }, [snapshotUrl]);
+
+  // Refresh shared-recorder status every 2s so the UI shows buffered segments.
+  useEffect(() => {
+    const tick = () => setSharedInfo(getSharedRecorderInfo());
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => clearInterval(id);
+  }, []);
 
 
   // If ?recording=<id> is present, fetch it and load into the pipeline.
