@@ -1000,7 +1000,7 @@ function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-muted-foreground">
-                Grab the last <b>N seconds</b> of any HLS live stream directly into <b>Source video</b> — no need to record via Studio first.
+                Grab the last <b>N seconds</b> of any HLS live stream and save it straight to <b>Recordings</b> — no need to open Studio. Load it from the Recordings tab afterwards to cut it.
               </p>
               <div className="space-y-1.5">
                 <Label htmlFor="snap-url">HLS playlist URL</Label>
