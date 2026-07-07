@@ -326,12 +326,26 @@ function RecordingsPage() {
         ))}
       </main>
 
-      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
+      <Dialog
+        open={!!preview}
+        onOpenChange={(o) => {
+          if (!o) {
+            if (preview?.url?.startsWith("blob:")) URL.revokeObjectURL(preview.url);
+            setPreview(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle className="truncate">{preview?.title}</DialogTitle>
           </DialogHeader>
-          {preview && (
+          {preview?.remuxing && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Remuxing .ts to MP4 for preview…
+            </div>
+          )}
+          {preview && preview.url && !preview.remuxing && (
             <video
               src={preview.url}
               controls
@@ -341,6 +355,7 @@ function RecordingsPage() {
           )}
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }
