@@ -132,8 +132,21 @@ function Dashboard() {
   }, [search.recording, loadingRecording, navigate]);
 
 
-  const [start, setStart] = useState("00:00");
-  const [end, setEnd] = useState("00:30");
+  const [segments, setSegments] = useState<Array<{ start: string; end: string }>>([
+    { start: "00:00", end: "00:30" },
+  ]);
+  const [activeSeg, setActiveSeg] = useState(0);
+
+  const updateSeg = (i: number, patch: Partial<{ start: string; end: string }>) =>
+    setSegments((s) => s.map((seg, idx) => (idx === i ? { ...seg, ...patch } : seg)));
+  const addSeg = () => {
+    setSegments((s) => [...s, { start: "00:00", end: "00:30" }]);
+    setActiveSeg(segments.length);
+  };
+  const removeSeg = (i: number) => {
+    setSegments((s) => (s.length <= 1 ? s : s.filter((_, idx) => idx !== i)));
+    setActiveSeg((a) => Math.max(0, Math.min(a, segments.length - 2)));
+  };
   const [mode, setMode] = useState<Mode>("full");
   const [fontSize, setFontSize] = useState(28);
   const [maxSentences, setMaxSentences] = useState(2);
