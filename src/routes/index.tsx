@@ -763,7 +763,12 @@ function Dashboard() {
 
       setStage("burning");
       setProgress(0);
-      const subbed = await burnSubtitles(clip, srt, fontSize, setProgress, { lowPerf, maxHeight });
+      const dims = await getVideoDimensions(clip);
+      const ass = cuesToAss(remapped, {
+        fontSize, outline: subOutline, xPct: subX, yPct: subY,
+        videoWidth: dims.width, videoHeight: dims.height,
+      });
+      const subbed = await burnSubtitles(clip, ass, setProgress, { lowPerf, maxHeight });
       checkCancel();
       setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
       setProgress(1);
