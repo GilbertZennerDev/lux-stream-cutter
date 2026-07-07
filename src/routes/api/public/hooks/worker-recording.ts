@@ -63,7 +63,7 @@ export const Route = createFileRoute("/api/public/hooks/worker-recording")({
       POST: async ({ request }: { request: Request }) => {
         const raw = await request.text();
         const sig = request.headers.get("x-worker-signature");
-        if (!verifySignature(raw, sig)) {
+        if (!(await verifySignature(raw, sig))) {
           return json({ error: "unauthorized" }, 401);
         }
 
