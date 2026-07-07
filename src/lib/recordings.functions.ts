@@ -33,7 +33,8 @@ export const createRecording = createServerFn({ method: "POST" })
   .inputValidator((input) => CreateInput.parse(input))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const path = `${data.sessionDate}/${data.startedAt.replace(/[:.]/g, "-")}_${data.chunkIndex}.ts`;
+    const ext = data.fileExt ?? "ts";
+    const path = `${data.sessionDate}/${data.startedAt.replace(/[:.]/g, "-")}_${data.chunkIndex}.${ext}`;
     const { data: row, error } = await supabaseAdmin
       .from("recordings")
       .insert({
