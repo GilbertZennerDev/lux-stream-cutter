@@ -65,6 +65,16 @@ function StudioError({ error, reset }: { error: Error; reset: () => void }) {
 
 function Studio() {
   const [url, setUrl] = useState(DEFAULT_URL);
+
+  // Hydrate URL from shared storage on mount; persist on every change so the
+  // Cutter's Snapshot can grab from the same live stream.
+  useEffect(() => {
+    const saved = getSharedStreamUrl();
+    if (saved) setUrl(saved);
+  }, []);
+  useEffect(() => {
+    if (url) setSharedStreamUrl(url);
+  }, [url]);
   const [autoMode, setAutoMode] = useState(true);
   const [fullCopy, setFullCopy] = useState(true);
   const [logs, setLogs] = useState<string[]>([]);
