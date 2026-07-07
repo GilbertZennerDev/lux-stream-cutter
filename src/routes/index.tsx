@@ -2,7 +2,7 @@ import { createFileRoute, Link, useSearch, useNavigate } from "@tanstack/react-r
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { getRecordingDownloadUrl, saveRecordingTranscript } from "@/lib/recordings.functions";
-import { Radio, Library, Film } from "lucide-react";
+import { Radio, Library, Film, Camera } from "lucide-react";
 import {
   CheckCircle2, Circle, Loader2, Upload, Download, Scissors,
   Music, Cloud, FileText, Type, Flame, Play, X,
@@ -25,6 +25,8 @@ import { cutAndConcat, extractAudioMp3, burnSubtitles, remuxTsToMp4 } from "@/li
 import { onFfmpegLog, cancelFFmpeg } from "@/lib/ffmpeg/client";
 import { luxasrJsonToCues, cuesToSrt, type SrtCue } from "@/lib/subtitles/luxasrToSrt";
 import { shortenCues } from "@/lib/subtitles/shortenSrt";
+import { startRecording } from "@/lib/hls/recorder";
+
 
 
 const indexSearchSchema = z.object({
@@ -179,6 +181,15 @@ function Dashboard() {
   const [sourcePreviewError, setSourcePreviewError] = useState<string | null>(null);
   const [isPreparingSourcePreview, setIsPreparingSourcePreview] = useState(false);
   const handledRecordingRef = useRef<string | null>(null);
+
+  // Live snapshot from an HLS URL directly into the Source Video slot
+  const [snapshotUrl, setSnapshotUrl] = useState(
+    "https://media02.webtvlive.eu/chd-edge/smil:chamber_tv_hd.smil/playlist.m3u8",
+  );
+  const [snapshotSeconds, setSnapshotSeconds] = useState(30);
+  const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const [snapshotProgress, setSnapshotProgress] = useState<string>("");
+
 
   // If ?recording=<id> is present, fetch it and load into the pipeline.
   useEffect(() => {

@@ -20,6 +20,7 @@ export type Database = {
           created_at: string
           ended_at: string | null
           error: string | null
+          full_copy: boolean
           id: string
           session_date: string
           size_bytes: number
@@ -37,6 +38,7 @@ export type Database = {
           created_at?: string
           ended_at?: string | null
           error?: string | null
+          full_copy?: boolean
           id?: string
           session_date: string
           size_bytes?: number
@@ -54,6 +56,7 @@ export type Database = {
           created_at?: string
           ended_at?: string | null
           error?: string | null
+          full_copy?: boolean
           id?: string
           session_date?: string
           size_bytes?: number

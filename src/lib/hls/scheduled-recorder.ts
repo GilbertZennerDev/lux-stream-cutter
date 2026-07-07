@@ -14,6 +14,8 @@ export interface ScheduledRecorderOptions {
   chunkMs?: number;
   /** ISO local session date (yyyy-mm-dd). */
   sessionDate: string;
+  /** Also record a single continuous copy of the full session in parallel. */
+  fullCopy?: boolean;
   /** Called on log lines. */
   onLog?: (msg: string) => void;
   /** Called when a chunk is fully uploaded and marked ready. */
@@ -31,6 +33,7 @@ export interface ScheduledRecorderHandle {
   snapshotCurrent: () => Promise<{ blob: Blob; startedAt: Date; chunkIndex: number } | null>;
 }
 
+
 /**
  * Record an HLS stream continuously by rotating an internal recorder every
  * `chunkMs`. Each rotation uploads the finished chunk to Lovable Cloud storage
@@ -46,6 +49,11 @@ export function startScheduledRecording(
   let currentStartedAt = new Date();
   let rotateTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Parallel full-session copy: a second recorder that never rotates.
+  const fullCopyEnabled = opts.fullCopy ?? false;
+  let fullCopy: RecorderHandle | null = null;
+  const fullCopyStartedAt = new Date();
+
   const log = (m: string) => opts.onLog?.(m);
 
   const uploadChunk = async (
@@ -53,9 +61,10 @@ export function startScheduledRecording(
     startedAt: Date,
     endedAt: Date,
     index: number,
+    opt?: { fullCopy?: boolean; title?: string },
   ) => {
     if (blob.size === 0) {
-      log(`[REC] Chunk ${index} empty, skipping`);
+      log(`[REC] ${opt?.fullCopy ? "Full copy" : `Chunk ${index}`} empty, skipping`);
       return;
     }
     try {
@@ -65,9 +74,11 @@ export function startScheduledRecording(
           chunkIndex: index,
           startedAt: startedAt.toISOString(),
           sourceUrl: opts.playlistUrl,
+          title: opt?.title,
+          fullCopy: opt?.fullCopy ?? false,
         },
       });
-      log(`[REC] Uploading chunk ${index} (${(blob.size / 1024 / 1024).toFixed(1)} MB)…`);
+      log(`[REC] Uploading ${opt?.fullCopy ? "full copy" : `chunk ${index}`} (${(blob.size / 1024 / 1024).toFixed(1)} MB)…`);
       const { error } = await supabase.storage
         .from(RECORDINGS_BUCKET)
         .uploadToSignedUrl(created.path, created.token, blob, {
@@ -81,16 +92,12 @@ export function startScheduledRecording(
           sizeBytes: blob.size,
         },
       });
-      log(`[REC] Chunk ${index} uploaded ✓`);
+      log(`[REC] ${opt?.fullCopy ? "Full copy" : `Chunk ${index}`} uploaded ✓`);
       opts.onChunkReady?.({ id: created.id, chunkIndex: index, sizeBytes: blob.size });
     } catch (err) {
       const msg = (err as Error).message;
-      log(`[REC] Chunk ${index} upload failed: ${msg}`);
+      log(`[REC] ${opt?.fullCopy ? "Full copy" : `Chunk ${index}`} upload failed: ${msg}`);
       opts.onChunkError?.(msg);
-      // best-effort mark failed (id may not exist)
-      try {
-        // we don't have id here if createRecording itself threw; ignore
-      } catch {}
     }
   };
 
@@ -129,7 +136,7 @@ export function startScheduledRecording(
     rotateTimer = setTimeout(rotate, chunkMs);
   };
 
-  // Kick off first chunk
+  // Kick off first chunk + optional full-copy recorder
   (async () => {
     try {
       current = await startRecording(opts.playlistUrl);
@@ -139,6 +146,15 @@ export function startScheduledRecording(
     } catch (err) {
       log(`[REC] Failed to start: ${(err as Error).message}`);
       opts.onChunkError?.((err as Error).message);
+    }
+    if (fullCopyEnabled) {
+      try {
+        fullCopy = await startRecording(opts.playlistUrl);
+        fullCopy.onLog((m) => log(`[FULL] ${m}`));
+        log(`[REC] Full-session copy started in parallel`);
+      } catch (err) {
+        log(`[REC] Full copy failed to start: ${(err as Error).message}`);
+      }
     }
   })();
 
@@ -161,17 +177,35 @@ export function startScheduledRecording(
       const prevStart = currentStartedAt;
       const prevIndex = chunkIndex;
       current = null;
+      const finals: Promise<unknown>[] = [];
       if (prev) {
-        try {
-          const blob = await prev.stop();
-          await uploadChunk(blob, prevStart, new Date(), prevIndex);
-        } catch (err) {
-          log(`[REC] Final chunk error: ${(err as Error).message}`);
-        }
+        finals.push(
+          prev
+            .stop()
+            .then((blob) => uploadChunk(blob, prevStart, new Date(), prevIndex))
+            .catch((err) => log(`[REC] Final chunk error: ${(err as Error).message}`)),
+        );
       }
+      if (fullCopy) {
+        const fc = fullCopy;
+        fullCopy = null;
+        finals.push(
+          fc
+            .stop()
+            .then((blob) =>
+              uploadChunk(blob, fullCopyStartedAt, new Date(), -1, {
+                fullCopy: true,
+                title: `Full session · ${opts.sessionDate}`,
+              }),
+            )
+            .catch((err) => log(`[REC] Full copy finalize error: ${(err as Error).message}`)),
+        );
+      }
+      await Promise.all(finals);
     },
   };
 }
+
 
 // Explicitly reference to keep import from being tree-shaken if unused in one path.
 void markRecordingFailed;

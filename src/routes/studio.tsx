@@ -62,7 +62,9 @@ function StudioError({ error, reset }: { error: Error; reset: () => void }) {
 function Studio() {
   const [url, setUrl] = useState(DEFAULT_URL);
   const [autoMode, setAutoMode] = useState(true);
+  const [fullCopy, setFullCopy] = useState(true);
   const [logs, setLogs] = useState<string[]>([]);
+
   const [chunkCount, setChunkCount] = useState(0);
   const [recording, setRecording] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -98,6 +100,7 @@ function Studio() {
         playlistUrl: url,
         sessionDate,
         chunkMs: 5 * 60 * 1000,
+        fullCopy,
         onLog: appendLog,
         onChunkReady: ({ chunkIndex }) => setChunkCount(chunkIndex + 1),
         onChunkError: (m) => appendLog(`ERR: ${m}`),
@@ -105,8 +108,9 @@ function Studio() {
       setRecording(true);
       setChunkCount(1);
     },
-    [url, appendLog],
+    [url, appendLog, fullCopy],
   );
+
 
   const stopNow = useCallback(async () => {
     const h = handleRef.current;
@@ -226,6 +230,13 @@ function Studio() {
       </header>
 
       <main className="mx-auto max-w-5xl px-6 py-6 space-y-6">
+        {recording && (
+          <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-destructive animate-pulse" />
+            <span className="font-medium">Recording in progress</span>
+            <span className="text-muted-foreground">— controls are locked. Use <b>Stop</b> to end.</span>
+          </div>
+        )}
         <Alert>
           <Calendar className="h-4 w-4" />
           <AlertTitle>Keep this tab open on an always-on machine</AlertTitle>
@@ -235,6 +246,7 @@ function Studio() {
             shows every chunk as it's finished.
           </AlertDescription>
         </Alert>
+
 
         <Card>
           <CardHeader className="pb-3">
@@ -288,21 +300,34 @@ function Studio() {
               />
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-2">
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={autoMode}
                   onChange={(e) => setAutoMode(e.target.checked)}
+                  disabled={recording}
                   className="h-4 w-4"
                 />
                 Auto-record on schedule (Tue–Thu 14:00–18:00)
               </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={fullCopy}
+                  onChange={(e) => setFullCopy(e.target.checked)}
+                  disabled={recording}
+                  className="h-4 w-4"
+                />
+                Also save one continuous full-session copy in parallel
+              </label>
             </div>
+
 
             <div className="flex gap-2 flex-wrap">
               {!recording ? (
                 <Button
+                  disabled={recording}
                   onClick={() =>
                     startNow(inSession?.sessionDate ?? sessionWindow.sessionDate)
                   }
@@ -314,6 +339,7 @@ function Studio() {
                   <Square className="h-4 w-4 mr-2" /> Stop
                 </Button>
               )}
+
               {recording && (
                 <Button variant="secondary" onClick={copyToCutter} disabled={copying}>
                   {copying ? (

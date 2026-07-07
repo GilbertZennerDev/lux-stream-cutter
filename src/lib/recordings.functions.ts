@@ -8,12 +8,14 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const CreateInput = z.object({
   sessionDate: isoDate,
-  chunkIndex: z.number().int().min(0),
+  chunkIndex: z.number().int(),
   startedAt: z.string(),
   sourceUrl: z.string().url().optional(),
   title: z.string().max(200).optional(),
   fileExt: z.string().regex(/^[a-zA-Z0-9]{1,8}$/).optional(),
+  fullCopy: z.boolean().optional(),
 });
+
 
 const MarkReadyInput = z.object({
   id: z.string().uuid(),
@@ -56,9 +58,11 @@ export const createRecording = createServerFn({ method: "POST" })
         status: "uploading",
         source_url: data.sourceUrl ?? null,
         title: data.title ?? null,
+        full_copy: data.fullCopy ?? false,
       })
       .select("id, storage_path")
       .single();
+
     if (error) throw new Error(error.message);
     const { data: signed, error: sErr } = await supabaseAdmin.storage
       .from(RECORDINGS_BUCKET)
