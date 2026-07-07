@@ -349,7 +349,107 @@ function Dashboard() {
     }
   };
 
+  const transcribeForCuts = async () => {
+    if (!file || isRunning) return;
+    setError(null);
+    setLogs([]);
+    setCues([]);
+    setSrtText(null);
+    setAudioBlob(null);
+    cancelledRef.current = false;
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const checkCancel = () => { if (cancelledRef.current) throw new Error("Cancelled"); };
+    try {
+      setStage("extracting");
+      setProgress(0);
+      const audioBytes = await extractAudioMp3(file, setProgress, { lowPerf });
+      checkCancel();
+      const audio = new Blob([audioBytes as BlobPart], { type: "audio/mpeg" });
+      setAudioBlob(audio);
+      setProgress(1);
+
+      setStage("asr");
+      setProgress(0);
+      appendLog(`[ASR] Uploading ${(audio.size / 1024).toFixed(0)} KB to LuxASR…`);
+      const submitRes = await fetch("/api/asr", {
+        method: "POST",
+        headers: { "content-type": "audio/mpeg", "x-filename": "clip.mp3" },
+        body: audio,
+        signal: ac.signal,
+      });
+      if (!submitRes.ok) {
+        const body = await submitRes.json().catch(() => ({ error: submitRes.statusText }));
+        throw new Error(`LuxASR: ${body.error ?? submitRes.statusText}`);
+      }
+      const { jobId } = (await submitRes.json()) as { jobId: string };
+      appendLog(`[ASR] Job ${jobId} submitted, polling…`);
+
+      const startedAt = Date.now();
+      const MAX_MS = 15 * 60 * 1000;
+      const STALL_MS = 3 * 60 * 1000;
+      let asrResult: unknown = null;
+      let lastStatus = "";
+      let lastProgressAt = Date.now();
+      while (true) {
+        checkCancel();
+        if (Date.now() - startedAt > MAX_MS) throw new Error("LuxASR polling timed out (15 min)");
+        if (Date.now() - lastProgressAt > STALL_MS)
+          throw new Error(`LuxASR stuck in "${lastStatus || "pending"}" for 3 min — aborting`);
+        await new Promise((r) => setTimeout(r, 3000));
+        checkCancel();
+        const pollRes = await fetch(`/api/asr?jobId=${encodeURIComponent(jobId)}`, { signal: ac.signal });
+        if (!pollRes.ok) {
+          const body = await pollRes.json().catch(() => ({ error: pollRes.statusText }));
+          throw new Error(`LuxASR: ${body.error ?? pollRes.statusText}`);
+        }
+        const p = (await pollRes.json()) as { status: string; result?: unknown };
+        if (p.status === "completed") { asrResult = p.result; break; }
+        if (p.status !== lastStatus) {
+          lastStatus = p.status;
+          lastProgressAt = Date.now();
+          appendLog(`[ASR] status: ${p.status}`);
+        }
+      }
+
+      setStage("srt");
+      const raw = luxasrJsonToCues(asrResult);
+      if (raw.length === 0) throw new Error("LuxASR returned no segments");
+      setStage("shortening");
+      const shortened = shortenCues(raw, { maxSentences, maxChars });
+      setCues(shortened);
+      setSrtText(cuesToSrt(shortened));
+      appendLog(`[CUES] ${shortened.length} blocks ready — pick your cut points below`);
+      setStage("done");
+      toast.success(`${shortened.length} subtitle blocks — click a block to set start/end`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (cancelledRef.current || message === "Cancelled" || (err as Error)?.name === "AbortError") {
+        appendLog("[CANCEL] Transcription stopped");
+        setStage("idle");
+        return;
+      }
+      console.error(err);
+      appendLog(`[ERROR] ${message}`);
+      setError(message);
+      setStage("error");
+      toast.error(message);
+    } finally {
+      abortRef.current = null;
+    }
+  };
+
+  const setStartFromSeconds = (t: number) => {
+    setStart(formatSeconds(t));
+    setTimeout(() => seekTo(startVideoRef, formatSeconds(t)), 50);
+  };
+  const setEndFromSeconds = (t: number) => {
+    setEnd(formatSeconds(t));
+    setTimeout(() => seekTo(endVideoRef, formatSeconds(t)), 50);
+  };
+
   const canRun = !!file && !isRunning;
+
 
 
   const download = (blob: Blob | null, name: string) => {
