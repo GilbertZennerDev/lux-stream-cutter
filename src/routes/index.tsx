@@ -597,8 +597,9 @@ function Dashboard() {
             <CardContent>
               {cues.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  Transcribe the full clip to see subtitle blocks with timestamps.
-                  Click any block to jump the previews, or use its buttons to set start / end.
+                  Transcribes the <strong>entire</strong> video (no cutting) so you can browse
+                  subtitle blocks with timestamps. Click any block to jump the previews, or use
+                  its buttons to set Start / End on the cut range above.
                 </p>
               ) : (
                 <ScrollArea className="h-72 rounded-md border">
