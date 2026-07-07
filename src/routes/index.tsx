@@ -749,43 +749,76 @@ function Dashboard() {
               {cues.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   Transcribes the <strong>entire</strong> video (no cutting) so you can browse
-                  subtitle blocks with timestamps. Click any block to jump the previews, or use
-                  its buttons to set Start / End on the cut range above.
+                  subtitle blocks with timestamps. Click any block to jump the previews, use
+                  its buttons to set Start / End on the cut range above, or tick the checkbox
+                  on multiple blocks and use <strong>Cut selected</strong> to build a video
+                  from only those blocks (with subtitles).
                 </p>
               ) : (
-                <ScrollArea className="h-72 rounded-md border">
-                  <ul className="divide-y">
-                    {cues.map((c) => (
-                      <li key={c.index} className="p-2 hover:bg-muted/40 group">
-                        <div className="flex items-center gap-2 mb-1">
-                          <button
-                            type="button"
-                            className="text-[11px] font-mono text-primary hover:underline"
-                            onClick={() => seekTo(startVideoRef, formatSeconds(c.start))}
-                            title="Preview at this timestamp"
-                          >
-                            {formatSeconds(c.start)} – {formatSeconds(c.end)}
-                          </button>
-                          <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
-                              onClick={() => setStartFromSeconds(c.start)}
+                <>
+                  <div className="flex items-center justify-between mb-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={selectAllCues}>
+                        Select all
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={clearSelectedCues}>
+                        Clear
+                      </Button>
+                      <span className="text-muted-foreground">
+                        {selectedCues.size} / {cues.length} selected
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={!file || isRunning || selectedCues.size === 0}
+                      onClick={cutFromSelectedCues}
+                    >
+                      {isRunning && (stage === "cutting" || stage === "burning") ? (
+                        <><Loader2 className="h-3 w-3 mr-2 animate-spin" /> Cutting…</>
+                      ) : (
+                        <><Scissors className="h-3 w-3 mr-2" /> Cut selected ({selectedCues.size})</>
+                      )}
+                    </Button>
+                  </div>
+                  <ScrollArea className="h-72 rounded-md border">
+                    <ul className="divide-y">
+                      {cues.map((c) => (
+                        <li key={c.index} className="p-2 hover:bg-muted/40 group">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Checkbox
+                              checked={selectedCues.has(c.index)}
+                              onCheckedChange={() => toggleCue(c.index)}
+                              aria-label={`Select block ${c.index}`}
+                            />
+                            <button
+                              type="button"
+                              className="text-[11px] font-mono text-primary hover:underline"
+                              onClick={() => seekTo(startVideoRef, formatSeconds(c.start))}
+                              title="Preview at this timestamp"
                             >
-                              ▸ Start
-                            </Button>
-                            <Button
-                              size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
-                              onClick={() => setEndFromSeconds(c.end)}
-                            >
-                              End ◂
-                            </Button>
+                              {formatSeconds(c.start)} – {formatSeconds(c.end)}
+                            </button>
+                            <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                              <Button
+                                size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                                onClick={() => setStartFromSeconds(c.start)}
+                              >
+                                ▸ Start
+                              </Button>
+                              <Button
+                                size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                                onClick={() => setEndFromSeconds(c.end)}
+                              >
+                                End ◂
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                        <p className="text-xs leading-snug">{c.text}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </ScrollArea>
+                          <p className="text-xs leading-snug pl-6">{c.text}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </ScrollArea>
+                </>
               )}
             </CardContent>
           </Card>
