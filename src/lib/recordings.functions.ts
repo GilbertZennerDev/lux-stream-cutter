@@ -123,7 +123,7 @@ export const getRecordingDownloadUrl = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: row, error } = await supabaseAdmin
       .from("recordings")
-      .select("storage_path, status")
+      .select("storage_path, status, title")
       .eq("id", data.id)
       .single();
     if (error) throw new Error(error.message);
@@ -132,8 +132,9 @@ export const getRecordingDownloadUrl = createServerFn({ method: "POST" })
       .from(RECORDINGS_BUCKET)
       .createSignedUrl(row.storage_path, DOWNLOAD_EXPIRES_SEC);
     if (sErr) throw new Error(sErr.message);
-    return { url: signed.signedUrl, path: row.storage_path };
+    return { url: signed.signedUrl, path: row.storage_path, title: row.title as string | null };
   });
+
 
 export const deleteRecording = createServerFn({ method: "POST" })
   .inputValidator((input) => IdInput.parse(input))
