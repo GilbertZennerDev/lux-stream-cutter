@@ -83,10 +83,12 @@ export const Route = createFileRoute("/api/public/hooks/worker-recording")({
           if (parsed.action === "create") {
             const ext = parsed.fileExt ?? "ts";
             const path = `${workerUserId}/${parsed.sessionDate}/${parsed.startedAt.replace(/[:.]/g, "-")}_${parsed.chunkIndex}.${ext}`;
+            const workerGroupId = process.env.WORKER_GROUP_ID ?? null;
             const { data: row, error } = await supabaseAdmin
               .from("recordings")
               .insert({
                 user_id: workerUserId,
+                group_id: workerGroupId,
                 session_date: parsed.sessionDate,
                 chunk_index: parsed.chunkIndex,
                 started_at: parsed.startedAt,
