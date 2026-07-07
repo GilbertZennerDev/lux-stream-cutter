@@ -248,29 +248,97 @@ async function ensureFont(ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>) {
   fontLoaded = true;
 }
 
+export interface SubtitleStyle {
+  /** Font size in pixels (relative to source video height in ASS PlayRes) */
+  fontSize: number;
+  /** Outline (black contour) thickness in pixels. 0 disables. */
+  outline: number;
+  /** Horizontal position of the subtitle's centre, 0..100 (% of video width). */
+  xPct: number;
+  /** Vertical position of the subtitle's centre, 0..100 (% of video height). */
+  yPct: number;
+  /** Video width in pixels (used as ASS PlayResX). */
+  videoWidth: number;
+  /** Video height in pixels (used as ASS PlayResY). */
+  videoHeight: number;
+}
+
+function assTime(seconds: number): string {
+  if (!isFinite(seconds) || seconds < 0) seconds = 0;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const cs = Math.floor((s - Math.floor(s)) * 100);
+  return `${h}:${String(m).padStart(2, "0")}:${String(Math.floor(s)).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
+}
+
+function escapeAssText(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/\{/g, "\\{")
+    .replace(/\}/g, "\\}")
+    .replace(/\r?\n/g, "\\N");
+}
+
+export interface AssCue { start: number; end: number; text: string }
+
+export function cuesToAss(cues: AssCue[], style: SubtitleStyle): string {
+  const w = Math.max(1, Math.round(style.videoWidth));
+  const h = Math.max(1, Math.round(style.videoHeight));
+  const outline = Math.max(0, style.outline);
+  const posX = Math.round((style.xPct / 100) * w);
+  const posY = Math.round((style.yPct / 100) * h);
+
+  // Alignment=5 => middle-center anchor, so \pos(x,y) places the centre of the text at (x,y).
+  const styleLine =
+    `Style: Default,${FONT_FAMILY},${style.fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,` +
+    `1,0,0,0,100,100,0,0,1,${outline},0,5,0,0,0,1`;
+
+  const events = cues
+    .filter((c) => c.end > c.start && c.text.trim().length > 0)
+    .map(
+      (c) =>
+        `Dialogue: 0,${assTime(c.start)},${assTime(c.end)},Default,,0,0,0,,{\\pos(${posX},${posY})}${escapeAssText(c.text)}`,
+    )
+    .join("\n");
+
+  return [
+    "[Script Info]",
+    "ScriptType: v4.00+",
+    "WrapStyle: 2",
+    "ScaledBorderAndShadow: yes",
+    `PlayResX: ${w}`,
+    `PlayResY: ${h}`,
+    "",
+    "[V4+ Styles]",
+    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+    styleLine,
+    "",
+    "[Events]",
+    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    events,
+    "",
+  ].join("\n");
+}
+
 export async function burnSubtitles(
   video: File | Blob,
-  srtText: string,
-  fontSize: number,
+  assText: string,
   onP?: ProgressCb,
   perf: PerfOptions = {},
 ): Promise<Uint8Array> {
   const ffmpeg = await getFFmpeg();
   const off = onP ? onProgress(ffmpeg, onP) : () => {};
   const inputName = "clip.mp4";
-  const subsName = "subs.srt";
+  const subsName = "subs.ass";
   const outputName = "clip_subbed.mp4";
   await ensureFont(ffmpeg);
   await ffmpeg.writeFile(inputName, await fetchFile(video));
-  await ffmpeg.writeFile(subsName, new TextEncoder().encode(srtText));
-  const style =
-    `FontName=${FONT_FAMILY},FontSize=${fontSize},PrimaryColour=&HFFFFFF&,` +
-    `OutlineColour=&H000000&,BorderStyle=1,Outline=2,Shadow=0,` +
-    `Bold=1,Alignment=2,MarginV=40`;
+  await ffmpeg.writeFile(subsName, new TextEncoder().encode(assText));
   const sf = scaleFilter(perf);
   const vf = sf
-    ? `${sf},subtitles=${subsName}:fontsdir=/fonts:force_style='${style}'`
-    : `subtitles=${subsName}:fontsdir=/fonts:force_style='${style}'`;
+    ? `${sf},ass=${subsName}:fontsdir=/fonts`
+    : `ass=${subsName}:fontsdir=/fonts`;
   try {
     await ffmpeg.exec([
       "-i", inputName,
@@ -289,4 +357,26 @@ export async function burnSubtitles(
     try { await ffmpeg.deleteFile(subsName); } catch {}
     try { await ffmpeg.deleteFile(outputName); } catch {}
   }
+}
+
+/** Read intrinsic width/height from a video File/Blob using a hidden element. */
+export async function getVideoDimensions(src: File | Blob): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(src);
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.muted = true;
+    const cleanup = () => URL.revokeObjectURL(url);
+    v.onloadedmetadata = () => {
+      const width = v.videoWidth || 1280;
+      const height = v.videoHeight || 720;
+      cleanup();
+      resolve({ width, height });
+    };
+    v.onerror = () => {
+      cleanup();
+      reject(new Error("Could not read video metadata"));
+    };
+    v.src = url;
+  });
 }
