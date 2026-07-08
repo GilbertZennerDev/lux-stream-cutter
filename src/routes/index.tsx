@@ -129,6 +129,24 @@ function isTransportStream(file: File | Blob, fileName = file instanceof File ? 
   return type === "video/mp2t" || /\.(m2ts|ts)$/i.test(fileName);
 }
 
+function isFfmpegFilesystemError(message: string): boolean {
+  return /ErrnoError:\s*FS error|FS error/i.test(message);
+}
+
+function friendlyPipelineError(message: string, stage: Stage): string {
+  if (!isFfmpegFilesystemError(message)) return message;
+  switch (stage) {
+    case "cutting":
+      return "FFmpeg could not create the cut output for this source. Try a shorter range or enable Low-performance mode with 480p output.";
+    case "extracting":
+      return "FFmpeg could not extract a usable audio track from this clip. The video cut may still be ready.";
+    case "burning":
+      return "FFmpeg could not create the subtitle-burned video. Try Low-performance mode with 480p output, or download the clip and SRT separately.";
+    default:
+      return "FFmpeg could not create the expected output file for this step.";
+  }
+}
+
 function formatDownloadBytes(bytes: number): string {
   const mb = bytes / 1024 / 1024;
   if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
@@ -505,7 +523,19 @@ function Dashboard() {
       // Stage 2: Audio
       setStage("extracting");
       setProgress(0);
-      const audioBytes = await extractAudioMp3(workingVideo, setProgress, { lowPerf });
+      let audioBytes: Uint8Array;
+      try {
+        audioBytes = await extractAudioMp3(workingVideo, setProgress, { lowPerf });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("No usable audio track") || isFfmpegFilesystemError(message)) {
+          appendLog(`[AUDIO] ${friendlyPipelineError(message, "extracting")}`);
+          toast.message("Clip ready — audio/subtitle steps skipped");
+          setStage("done");
+          return;
+        }
+        throw err;
+      }
       checkCancel();
       const audio = new Blob([audioBytes as BlobPart], { type: "audio/mpeg" });
       setAudioBlob(audio);
@@ -623,7 +653,8 @@ function Dashboard() {
       setStage("done");
       toast.success("Pipeline complete");
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const message = friendlyPipelineError(rawMessage, stage);
       if (cancelledRef.current || message === "Cancelled" || (err as Error)?.name === "AbortError") {
         appendLog("[CANCEL] Pipeline stopped");
         setStage("idle");
@@ -750,7 +781,8 @@ function Dashboard() {
       setStage("done");
       toast.success(`${shortened.length} subtitle blocks — click a block to set start/end`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const message = friendlyPipelineError(rawMessage, stage);
       if (cancelledRef.current || message === "Cancelled" || (err as Error)?.name === "AbortError") {
         appendLog("[CANCEL] Transcription stopped");
         setStage("idle");
@@ -850,7 +882,8 @@ function Dashboard() {
       setStage("done");
       toast.success(`Cut ${picked.length} blocks with subtitles`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const message = friendlyPipelineError(rawMessage, stage);
       if (cancelledRef.current || message === "Cancelled" || (err as Error)?.name === "AbortError") {
         appendLog("[CANCEL] Stopped");
         setStage("idle");
