@@ -777,6 +777,16 @@ function Dashboard() {
 
   const cutFromSelectedCues = async () => {
     if (!file || isRunning) return;
+    if (isTransportStream(file) && !sourcePreviewBlob) {
+      toast.error(
+        isPreparingSourcePreview
+          ? "Still preparing the .ts source for cutting — try again in a few seconds."
+          : "This .ts file hasn't been prepared for cutting yet.",
+      );
+      return;
+    }
+    const sourceForCut: Blob =
+      isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file;
     const picked = cues
       .filter((c) => selectedCues.has(c.index))
       .sort((a, b) => a.start - b.start);
@@ -817,7 +827,7 @@ function Dashboard() {
       setStage("cutting");
       setProgress(0);
       appendLog(`[CUT] ${picked.length} selected blocks → ${formatSeconds(offset)}`);
-      const cut = await cutAndConcat(file, parsedSegments, setProgress, { lowPerf, maxHeight });
+      const cut = await cutAndConcat(sourceForCut, parsedSegments, setProgress, { lowPerf, maxHeight });
       checkCancel();
       const clip = new Blob([cut as BlobPart], { type: "video/mp4" });
       setClipBlob(clip);
