@@ -1,0 +1,1 @@
+UPDATE public.recordings SET status = 'failed', error = 'Upload never completed: worker create hook succeeded but ready/failed hook never arrived (upload PUT hung or worker cycled). Auto-marked failed.' WHERE id = 'ae0c9f04-f0b5-46bc-9436-9269e330ddcb' AND status = 'uploading';
