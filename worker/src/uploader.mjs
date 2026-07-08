@@ -33,15 +33,26 @@ export async function markFailed(input) {
   return signedPost({ action: "failed", ...input });
 }
 
-/** Upload a Buffer to the signed URL returned by createRecording. */
+/** Upload a Buffer to the signed URL. Times out and retries once. */
 export async function uploadToSignedUrl(uploadUrl, buffer, contentType = "video/mp2t") {
-  const res = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": contentType, "x-upsert": "true" },
-    body: buffer,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`upload ${res.status}: ${text}`);
+  const TIMEOUT_MS = 120_000;
+  const attempt = async () => {
+    const res = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType, "x-upsert": "true" },
+      body: buffer,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`upload ${res.status}: ${text}`);
+    }
+  };
+  try {
+    await attempt();
+  } catch (err) {
+    // One retry on timeout or network error.
+    await new Promise((r) => setTimeout(r, 2000));
+    await attempt();
   }
 }
