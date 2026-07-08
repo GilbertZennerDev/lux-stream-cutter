@@ -219,10 +219,7 @@ function Dashboard() {
   // If ?recording=<id> is present, fetch it and load into the pipeline.
   useEffect(() => {
     const id = search.recording;
-    if (!id) {
-      handledRecordingRef.current = null;
-      return;
-    }
+    if (!id) return;
     if (handledRecordingRef.current === id) return;
     handledRecordingRef.current = id;
     setLoadingRecording(id);
@@ -268,16 +265,19 @@ function Dashboard() {
           toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB`);
         }
       } catch (err) {
+        // Allow the user to retry by re-clicking Cut on the same recording.
         handledRecordingRef.current = null;
         toast.error((err as Error).message);
       } finally {
         setLoadingRecording(null);
         setRecordingLoadLabel(null);
-        // Clear the search param so browser URL is tidy; ref guard prevents reload.
-        navigate({ to: "/", search: {}, replace: true });
       }
     })();
-  }, [search.recording, navigate]);
+    // `navigate` intentionally excluded — including it would re-fire this
+    // effect on every render (useNavigate returns a fresh reference) and
+    // wipe the loaded file after ~1s.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.recording]);
 
   const runSnapshot = useCallback(async () => {
     if (snapshotBusy || !snapshotUrl) return;
