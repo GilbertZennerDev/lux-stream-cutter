@@ -992,6 +992,12 @@ function Dashboard() {
                       setSourceTitle(null);
                       setRecordingId(null);
                       handledRecordingRef.current = null;
+                      // Drop ?recording=<id> from the URL so the effect
+                      // above doesn't immediately re-load the recording
+                      // and overwrite the file the user just picked.
+                      if (search.recording) {
+                        navigate({ to: "/", search: {}, replace: true });
+                      }
                     }
                   }}
                 />
