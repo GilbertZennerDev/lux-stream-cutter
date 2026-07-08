@@ -676,7 +676,9 @@ function Dashboard() {
     try {
       setStage("extracting");
       setProgress(0);
-      const audioBytes = await extractAudioMp3(file, setProgress, { lowPerf });
+      const audioSource: Blob =
+        isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file;
+      const audioBytes = await extractAudioMp3(audioSource, setProgress, { lowPerf });
       checkCancel();
       const audio = new Blob([audioBytes as BlobPart], { type: "audio/mpeg" });
       setAudioBlob(audio);
