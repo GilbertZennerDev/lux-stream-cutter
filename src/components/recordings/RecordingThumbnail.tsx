@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Film, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { getRecordingDownloadUrl } from "@/lib/recordings.functions";
 
 // Module-level cache so thumbnails persist across renders/refetches.
