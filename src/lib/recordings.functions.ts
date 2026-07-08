@@ -148,8 +148,8 @@ export const getRecordingDownloadUrl = createServerFn({ method: "POST" })
       .from("recordings")
       .select("storage_path, status, title, transcript, transcript_srt, transcribed_at")
       .eq("id", data.id)
-      .eq("user_id", context.userId)
       .single();
+
     if (error) throw new Error(error.message);
     if (row.status !== "ready") throw new Error(`Recording not ready (${row.status})`);
     const { data: signed, error: sErr } = await context.supabase.storage
