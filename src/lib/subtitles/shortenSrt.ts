@@ -7,9 +7,32 @@ function splitSentences(text: string): string[] {
   return parts.map((s) => s.trim()).filter(Boolean);
 }
 
-// Join sentences with a newline so each phrase renders on its own line.
-function joinWithBreaks(sentences: string[]): string {
-  return sentences.map((s) => s.trim()).filter(Boolean).join("\n");
+// Word-wrap a single line to at most `maxChars` per line at word boundaries.
+function wrapLine(text: string, maxChars: number): string {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const w of words) {
+    if (!current) {
+      current = w;
+    } else if (current.length + 1 + w.length <= maxChars) {
+      current += " " + w;
+    } else {
+      lines.push(current);
+      current = w;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.join("\n");
+}
+
+// Join sentences with a newline so each phrase renders on its own line,
+// wrapping any sentence longer than maxChars at word boundaries.
+function joinWithBreaks(sentences: string[], maxChars: number): string {
+  return sentences
+    .map((s) => wrapLine(s.trim(), maxChars))
+    .filter(Boolean)
+    .join("\n");
 }
 
 // Chunk into groups of up to `maxSentences` sentences and split cues
