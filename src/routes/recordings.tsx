@@ -18,6 +18,7 @@ import {
   type RecordingRow,
 } from "@/lib/recordings.functions";
 import { TranscriptEditor } from "@/components/recordings/TranscriptEditor";
+import { RecordingThumbnail } from "@/components/recordings/RecordingThumbnail";
 
 
 
@@ -286,14 +287,21 @@ function RecordingsPage() {
                     <div className="w-16 text-xs font-mono text-muted-foreground">
                       #{String(r.chunk_index).padStart(3, "0")}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">
-                        {r.title ?? r.storage_path.split("/").pop()}
-                      </div>
-                      <div className="text-xs font-mono text-muted-foreground truncate">
-                        {formatTimeRange(r.started_at, r.ended_at)} · {formatBytes(r.size_bytes)}
-                        {formatAudioDetails(r) && <span> · {formatAudioDetails(r)}</span>}
-                        {r.error && <span className="text-destructive"> · {r.error}</span>}
+                    <div className="flex-1 min-w-0 flex gap-3">
+                      <RecordingThumbnail
+                        recordingId={r.id}
+                        storagePath={r.storage_path}
+                        ready={r.status === "ready"}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate">
+                          {r.title ?? r.storage_path.split("/").pop()}
+                        </div>
+                        <div className="text-xs font-mono text-muted-foreground truncate">
+                          {formatTimeRange(r.started_at, r.ended_at)} · {formatBytes(r.size_bytes)}
+                          {formatAudioDetails(r) && <span> · {formatAudioDetails(r)}</span>}
+                          {r.error && <span className="text-destructive"> · {r.error}</span>}
+                        </div>
                       </div>
                     </div>
                     {r.full_copy && <Badge variant="secondary">Full copy</Badge>}
