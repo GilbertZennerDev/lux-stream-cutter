@@ -48,7 +48,43 @@ async function muxAvIntoTs(videoBuffer, audioBuffer) {
       const stderr = err.stderr ? `: ${String(err.stderr).slice(-1000)}` : "";
       throw new Error(`audio mux failed${stderr}`);
     }
-    return readFile(outputPath);
+    const muxed = await readFile(outputPath);
+    const streams = await probeBufferStreams(muxed, "muxed output");
+    if (!streams.hasVideo) throw new Error("audio mux failed: muxed output has no video stream");
+    if (!streams.hasAudio) throw new Error("audio mux failed: muxed output has no audio stream");
+    return muxed;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function probeBufferStreams(buffer, label) {
+  const dir = await mkdtemp(join(tmpdir(), "luxstream-probe-"));
+  const inputPath = join(dir, "input.ts");
+  try {
+    await writeFile(inputPath, buffer);
+    let stdout;
+    try {
+      ({ stdout } = await execFileAsync(
+        "ffprobe",
+        [
+          "-v", "error",
+          "-show_entries", "stream=codec_type,codec_name",
+          "-of", "json",
+          inputPath,
+        ],
+        { timeout: 60_000, maxBuffer: 1024 * 1024 },
+      ));
+    } catch (err) {
+      const stderr = err.stderr ? `: ${String(err.stderr).slice(-1000)}` : "";
+      throw new Error(`ffprobe failed for ${label}${stderr}`);
+    }
+    const parsed = JSON.parse(stdout || "{}");
+    const streams = Array.isArray(parsed.streams) ? parsed.streams : [];
+    const hasVideo = streams.some((s) => s.codec_type === "video");
+    const hasAudio = streams.some((s) => s.codec_type === "audio");
+    const summary = streams.map((s) => `${s.codec_type}:${s.codec_name ?? "?"}`).join(", ") || "none";
+    return { hasVideo, hasAudio, summary };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -69,6 +105,7 @@ export async function startRecording(playlistUrl) {
   let bytes = 0;
   let audioBytes = 0;
   let audioRequired = false;
+  let lastOutputInfo = null;
 
   const first = await fetchText(playlistUrl, ac.signal);
   let mediaUrl = playlistUrl;
@@ -88,7 +125,7 @@ export async function startRecording(playlistUrl) {
         audios.find((a) => a.groupId === chosen.audioGroup && a.url);
       if (match?.url) {
         audioUrl = match.url;
-        log(`audio group ${chosen.audioGroup} (${match.name || "unnamed"}) detected`);
+        log(`audio group ${chosen.audioGroup} (${match.name || "unnamed"}) detected: ${audioUrl}`);
       } else {
         log(`audio group ${chosen.audioGroup} declared but no URI found`);
       }
@@ -140,13 +177,42 @@ export async function startRecording(playlistUrl) {
 
   const buildBufferFrom = async (startIdx) => {
     const video = Buffer.concat(videoChunks.slice(startIdx));
-    if (!audioRequired) return video;
+    if (video.length === 0) throw new Error("no video segments were captured");
+
+    if (!audioRequired) {
+      const streams = await probeBufferStreams(video, "captured output");
+      if (!streams.hasVideo) throw new Error("captured output has no video stream");
+      lastOutputInfo = {
+        expected: false,
+        videoSegments: videoChunks.length - startIdx,
+        videoBytes: video.length,
+        capturedSegments: 0,
+        capturedBytes: 0,
+        outputHasAudio: streams.hasAudio,
+        streams: streams.summary,
+      };
+      log(`captured output streams: ${streams.summary}`);
+      return video;
+    }
+
     if (!audioUrl) throw new Error("audio expected but no audio rendition URI was available");
     if (audioChunks.length === 0) throw new Error("audio expected but no audio segments were captured");
-    const audio = Buffer.concat(audioChunks.slice(Math.min(startIdx, audioChunks.length)));
+    const audioStartIdx = Math.min(startIdx, audioChunks.length);
+    const audio = Buffer.concat(audioChunks.slice(audioStartIdx));
     if (audio.length === 0) throw new Error("audio expected but audio slice was empty");
     const muxed = await muxAvIntoTs(video, audio);
-    log(`muxed ${videoChunks.length - startIdx} video segments with ${audioChunks.length - Math.min(startIdx, audioChunks.length)} audio segments (${(muxed.length / 1024 / 1024).toFixed(1)} MB)`);
+    const streams = await probeBufferStreams(muxed, "verified muxed output");
+    if (!streams.hasAudio) throw new Error(`audio expected but verified output has no audio stream (${streams.summary})`);
+    lastOutputInfo = {
+      expected: true,
+      videoSegments: videoChunks.length - startIdx,
+      videoBytes: video.length,
+      capturedSegments: audioChunks.length - audioStartIdx,
+      capturedBytes: audio.length,
+      outputHasAudio: true,
+      streams: streams.summary,
+    };
+    log(`muxed ${lastOutputInfo.videoSegments} video segments (${(video.length / 1024 / 1024).toFixed(1)} MB) with ${lastOutputInfo.capturedSegments} audio segments (${(audio.length / 1024 / 1024).toFixed(1)} MB); output streams: ${streams.summary}; muxed ${(muxed.length / 1024 / 1024).toFixed(1)} MB`);
     return muxed;
   };
 
@@ -155,6 +221,7 @@ export async function startRecording(playlistUrl) {
     getAudioSegmentCount: () => audioChunks.length,
     getBytes: () => bytes,
     getAudioBytes: () => audioBytes,
+    getAudioVerification: () => lastOutputInfo,
     stop: async () => {
       stopped = true;
       ac.abort();
