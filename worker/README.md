@@ -11,7 +11,7 @@ edit `src/schedule.mjs` and redeploy.
 ## Files
 
 - `src/index.mjs` — main loop (schedule check + chunk rotation).
-- `src/recorder.mjs` — HLS video capture (Node fetch, no ffmpeg).
+- `src/recorder.mjs` — HLS capture, including split audio renditions, muxed with FFmpeg.
 - `src/schedule.mjs` — mirrors `src/lib/schedule.ts` from the app.
 - `src/uploader.mjs` — HMAC-signed calls to the app's public hook.
 - `src/parsePlaylist.mjs` — minimal m3u8 parser.
@@ -47,12 +47,11 @@ fly logs
 ```
 
 Free-tier machine (`shared-cpu-1x`, 512 MB) is enough — the worker holds one
-chunk (~30 MB) in memory at a time.
+chunk plus its audio rendition in memory and muxes with FFmpeg without re-encoding.
 
 ## Deploy elsewhere
 
-Any Docker host works. The image is a plain Node 20 alpine container with no
-extra deps:
+Any Docker host works. The image is a Node 20 alpine container with FFmpeg:
 
 ```bash
 docker build -t luxstream-worker worker/

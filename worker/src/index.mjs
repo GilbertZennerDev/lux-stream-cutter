@@ -48,6 +48,30 @@ async function uploadChunk({ buffer, startedAt, endedAt, sessionDate, chunkIndex
   }
 }
 
+async function markChunkFailed({ error, startedAt, endedAt, sessionDate, chunkIndex, sourceUrl }) {
+  let created;
+  try {
+    created = await createRecording({
+      sessionDate,
+      chunkIndex,
+      startedAt: startedAt.toISOString(),
+      sourceUrl,
+    });
+  } catch (err) {
+    log(`create failed row for chunk ${chunkIndex}: ${err.message}`);
+    return;
+  }
+  try {
+    await markFailed({
+      id: created.id,
+      error: `${error}; endedAt=${endedAt.toISOString()}`.slice(0, 500),
+    });
+    log(`chunk ${chunkIndex} marked failed: ${error}`);
+  } catch (err) {
+    log(`mark failed chunk ${chunkIndex} failed: ${err.message}`);
+  }
+}
+
 async function runSession(session) {
   log(`session start · date=${session.sessionDate} until=${session.end.toISOString()}`);
   let chunkIndex = 0;
@@ -88,6 +112,7 @@ async function runSession(session) {
       (async () => {
         try {
           const buffer = await prev.stop();
+          log(`chunk ${prevIdx} captured ${prev.getSegmentCount()} video / ${prev.getAudioSegmentCount?.() ?? 0} audio segments`);
           await uploadChunk({
             buffer,
             startedAt: prevStart,
@@ -98,6 +123,14 @@ async function runSession(session) {
           });
         } catch (err) {
           log(`finalize chunk ${prevIdx} err: ${err.message}`);
+          await markChunkFailed({
+            error: err.message,
+            startedAt: prevStart,
+            endedAt: new Date(),
+            sessionDate: session.sessionDate,
+            chunkIndex: prevIdx,
+            sourceUrl: PLAYLIST_URL,
+          });
         }
       })();
     }
@@ -107,6 +140,7 @@ async function runSession(session) {
   if (recorder) {
     try {
       const buffer = await recorder.stop();
+      log(`chunk ${chunkIndex} captured ${recorder.getSegmentCount()} video / ${recorder.getAudioSegmentCount?.() ?? 0} audio segments`);
       await uploadChunk({
         buffer,
         startedAt: chunkStart,
@@ -117,6 +151,14 @@ async function runSession(session) {
       });
     } catch (err) {
       log(`final chunk err: ${err.message}`);
+      await markChunkFailed({
+        error: err.message,
+        startedAt: chunkStart,
+        endedAt: new Date(),
+        sessionDate: session.sessionDate,
+        chunkIndex,
+        sourceUrl: PLAYLIST_URL,
+      });
     }
   }
   log(`session complete`);

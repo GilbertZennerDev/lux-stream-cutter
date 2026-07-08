@@ -36,11 +36,29 @@ export function parseMaster(text, baseUrl) {
           url: resolveUrl(baseUrl, uri),
           bandwidth: Number(attrs.BANDWIDTH ?? 0) || 0,
           resolution: attrs.RESOLUTION,
+          audioGroup: attrs.AUDIO,
         });
       }
     }
   }
   return variants;
+}
+
+export function parseAudioMedia(text, baseUrl) {
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  for (const line of lines) {
+    if (!line.startsWith("#EXT-X-MEDIA")) continue;
+    const attrs = parseAttrs(line.substring(line.indexOf(":") + 1));
+    if ((attrs.TYPE ?? "").toUpperCase() !== "AUDIO") continue;
+    out.push({
+      groupId: attrs["GROUP-ID"] ?? "",
+      name: attrs.NAME ?? "",
+      url: attrs.URI ? resolveUrl(baseUrl, attrs.URI) : undefined,
+      isDefault: (attrs.DEFAULT ?? "NO").toUpperCase() === "YES",
+    });
+  }
+  return out;
 }
 
 export function parseMedia(text, baseUrl) {

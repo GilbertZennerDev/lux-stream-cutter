@@ -1,25 +1,23 @@
 ## Plan
 
-1. **Stop using `filter_complex` for cutting**
-   - Replace the multi-segment `trim/atrim/concat` filter graph in `cutAndConcat` with a simpler two-step pipeline:
-     - cut each segment into its own temporary MP4 file
-     - concatenate those files with FFmpeg’s concat demuxer
-   - This avoids the browser Wasm FS crash path that produces `ErrnoError: FS error`.
+1. **Fix the deployed worker recorder**
+   - Update the worker HLS parser to read `AUDIO="..."` from variants and `#EXT-X-MEDIA:TYPE=AUDIO` renditions from the master playlist.
+   - Update the worker recorder to poll the selected audio playlist in parallel with the video playlist.
+   - Combine video and audio into one MPEG-TS output before upload, instead of uploading video-only chunks.
 
-2. **Make single-segment cuts safer too**
-   - Keep the fast stream-copy path for normal MP4 input.
-   - If it fails or no output file is produced, automatically fall back to re-encoding.
-   - For transport-stream-derived input, prefer safer seek/re-encode behavior instead of depending on a fragile copy result.
+2. **Use server-side FFmpeg in the worker**
+   - Add FFmpeg to the worker container.
+   - Mux without re-encoding: video stream from the selected video playlist + audio stream from the audio playlist, preserving quality and keeping CPU use low.
+   - Fail the recording chunk visibly if audio was expected but missing or muxing fails, rather than silently uploading a video-only file.
 
-3. **Add proper FFmpeg filesystem hygiene**
-   - Use unique temp filenames per run so stale files do not collide with previous failed jobs.
-   - Delete all temp segment files, concat list files, input files, and output files in `finally` blocks.
-   - Treat missing output after `ffmpeg.exec()` as a real failure with a clearer message instead of surfacing raw `ErrnoError`.
+3. **Make audio status observable**
+   - Add worker logs for: selected video variant, detected audio rendition, audio segment count/bytes, and mux success/failure.
+   - Include enough context in failed recording rows so it is clear whether audio capture or muxing failed.
 
-4. **Fix `.ts` preparation assumptions**
-   - Keep the existing TS-to-MP4 remux preview path, but do not rely on it as the only protection.
-   - If cutting still receives a TS/remuxed stream that fails copy, use the segment re-encode fallback automatically.
+4. **Keep the browser recorder aligned**
+   - Mirror parser fixes between `src/lib/hls/parsePlaylist.ts` and `worker/src/parsePlaylist.mjs` so manual browser recordings and scheduled worker recordings interpret HLS audio the same way.
 
-5. **Verify the real user flow**
-   - Typecheck the edited files.
-   - Run the cutter flow in the browser with a small generated sample video, including multiple cut ranges, and confirm the output clip is created instead of showing `Pipeline failed`.
+5. **Verify with the actual Chamber TV playlist**
+   - Record a short sample from the current playlist.
+   - Inspect it with `ffprobe` to confirm both video and audio streams are present.
+   - Confirm the resulting `.ts` should play with sound in VLC and be usable by Cutter.
