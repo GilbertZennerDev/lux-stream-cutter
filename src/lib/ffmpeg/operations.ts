@@ -26,6 +26,47 @@ function threadArgs(perf: PerfOptions): string[] {
   return perf.lowPerf ? ["-threads", "1"] : ["-threads", "2"];
 }
 
+function tempToken() {
+  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+}
+
+async function readOutputFile(
+  ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>,
+  outputName: string,
+  context: string,
+): Promise<Uint8Array> {
+  try {
+    return (await ffmpeg.readFile(outputName)) as Uint8Array;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`${context} did not create an output file${detail ? `: ${detail}` : ""}`);
+  }
+}
+
+function reencodeCutArgs(
+  inputName: string,
+  outputName: string,
+  startSec: number,
+  endSec: number,
+  perf: PerfOptions,
+): string[] {
+  const duration = (endSec - startSec).toFixed(3);
+  const args = [
+    "-ss", formatSeconds(startSec),
+    "-i", inputName,
+    "-t", duration,
+    ...encodeArgs(perf),
+    "-c:a", "aac", "-b:a", perf.lowPerf ? "96k" : "128k",
+    ...threadArgs(perf),
+    "-avoid_negative_ts", "make_zero",
+    "-movflags", "+faststart",
+    "-y", outputName,
+  ];
+  const sf = scaleFilter(perf);
+  if (sf) args.splice(args.indexOf("-c:v"), 0, "-vf", sf);
+  return args;
+}
+
 function scaleFilter(perf: PerfOptions): string | null {
   const h = perf.maxHeight ?? (perf.lowPerf ? 480 : 0);
   if (!h) return null;
@@ -40,12 +81,13 @@ export async function remuxTsToMp4(
 ): Promise<Uint8Array> {
   const ffmpeg = await getFFmpeg();
   const off = onP ? onProgress(ffmpeg, onP) : () => {};
-  const inputName = "input.ts";
-  const outputName = "input.mp4";
+  const token = tempToken();
+  const inputName = `remux_${token}.ts`;
+  const outputName = `remux_${token}.mp4`;
   await ffmpeg.writeFile(inputName, await fetchFile(file));
   const tryExec = async (args: string[]) => {
     await ffmpeg.exec(args);
-    return (await ffmpeg.readFile(outputName)) as Uint8Array;
+    return readOutputFile(ffmpeg, outputName, "TS remux");
   };
   try {
     // First attempt: copy both streams, apply AAC ADTS→ASC when audio is AAC.
@@ -99,8 +141,9 @@ export async function cutVideo(
   if (endSec <= startSec) throw new Error("End must be greater than start");
   const ffmpeg = await getFFmpeg();
   const off = onP ? onProgress(ffmpeg, onP) : () => {};
-  const inputName = "input.bin";
-  const outputName = "clip.mp4";
+  const token = tempToken();
+  const inputName = `cut_${token}.bin`;
+  const outputName = `cut_${token}.mp4`;
   await ffmpeg.writeFile(inputName, await fetchFile(file));
   const duration = (endSec - startSec).toFixed(3);
   const mustReencode = !!(perf.lowPerf || perf.maxHeight);
@@ -115,25 +158,13 @@ export async function cutVideo(
       "-movflags", "+faststart",
       "-y", outputName,
     ]);
-    const data = await ffmpeg.readFile(outputName);
-    return data as Uint8Array;
+    return await readOutputFile(ffmpeg, outputName, "Fast cut");
   } catch {
     // Re-encode fallback (keyframe-accurate)
-    const args = [
-      "-ss", formatSeconds(startSec),
-      "-i", inputName,
-      "-t", duration,
-      ...encodeArgs(perf),
-      "-c:a", "aac", "-b:a", perf.lowPerf ? "96k" : "128k",
-      ...threadArgs(perf),
-      "-movflags", "+faststart",
-      "-y", outputName,
-    ];
-    const sf = scaleFilter(perf);
-    if (sf) args.splice(args.indexOf("-c:v"), 0, "-vf", sf);
+    try { await ffmpeg.deleteFile(outputName); } catch {}
+    const args = reencodeCutArgs(inputName, outputName, startSec, endSec, perf);
     await ffmpeg.exec(args);
-    const data = await ffmpeg.readFile(outputName);
-    return data as Uint8Array;
+    return await readOutputFile(ffmpeg, outputName, "Re-encoded cut");
   } finally {
     off();
     try { await ffmpeg.deleteFile(inputName); } catch {}
@@ -156,44 +187,55 @@ export async function cutAndConcat(
   }
   const ffmpeg = await getFFmpeg();
   const off = onP ? onProgress(ffmpeg, onP) : () => {};
-  const inputName = "input.bin";
-  const outputName = "clip.mp4";
+  const token = tempToken();
+  const inputName = `concat_input_${token}.bin`;
+  const listName = `concat_${token}.txt`;
+  const outputName = `concat_${token}.mp4`;
+  const segmentNames = segments.map((_, i) => `concat_part_${token}_${i}.mp4`);
   await ffmpeg.writeFile(inputName, await fetchFile(file));
   try {
-    const parts: string[] = [];
-    const labels: string[] = [];
-    segments.forEach((s, i) => {
-      parts.push(`[0:v]trim=start=${s.start}:end=${s.end},setpts=PTS-STARTPTS[v${i}]`);
-      parts.push(`[0:a]atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS[a${i}]`);
-      labels.push(`[v${i}][a${i}]`);
-    });
-    parts.push(`${labels.join("")}concat=n=${segments.length}:v=1:a=1[outv][outa]`);
-    const filter = parts.join(";");
-    const args = [
-      "-i", inputName,
-      "-filter_complex", filter,
-      "-map", "[outv]",
-      "-map", "[outa]",
-      ...encodeArgs(perf),
-      "-c:a", "aac", "-b:a", perf.lowPerf ? "96k" : "128k",
-      ...threadArgs(perf),
-      "-movflags", "+faststart",
-      "-y", outputName,
-    ];
-    const sf = scaleFilter(perf);
-    if (sf) {
-      // Inject scale into each video trim by chaining after setpts
-      const scaled = parts.map((p) =>
-        p.startsWith("[0:v]trim") ? p.replace("setpts=PTS-STARTPTS", `setpts=PTS-STARTPTS,${sf}`) : p,
-      );
-      args[args.indexOf("-filter_complex") + 1] = scaled.join(";");
+    for (let i = 0; i < segments.length; i++) {
+      const s = segments[i];
+      await ffmpeg.exec(reencodeCutArgs(inputName, segmentNames[i], s.start, s.end, perf));
+      await readOutputFile(ffmpeg, segmentNames[i], `Segment ${i + 1}`);
     }
-    await ffmpeg.exec(args);
-    const data = await ffmpeg.readFile(outputName);
-    return data as Uint8Array;
+
+    await ffmpeg.writeFile(
+      listName,
+      new TextEncoder().encode(segmentNames.map((name) => `file '${name}'`).join("\n")),
+    );
+
+    try {
+      await ffmpeg.exec([
+        "-f", "concat",
+        "-safe", "0",
+        "-i", listName,
+        "-c", "copy",
+        "-movflags", "+faststart",
+        "-y", outputName,
+      ]);
+      return await readOutputFile(ffmpeg, outputName, "Concatenation");
+    } catch {
+      try { await ffmpeg.deleteFile(outputName); } catch {}
+      await ffmpeg.exec([
+        "-f", "concat",
+        "-safe", "0",
+        "-i", listName,
+        ...encodeArgs(perf),
+        "-c:a", "aac", "-b:a", perf.lowPerf ? "96k" : "128k",
+        ...threadArgs(perf),
+        "-movflags", "+faststart",
+        "-y", outputName,
+      ]);
+      return await readOutputFile(ffmpeg, outputName, "Re-encoded concatenation");
+    }
   } finally {
     off();
     try { await ffmpeg.deleteFile(inputName); } catch {}
+    try { await ffmpeg.deleteFile(listName); } catch {}
+    for (const name of segmentNames) {
+      try { await ffmpeg.deleteFile(name); } catch {}
+    }
     try { await ffmpeg.deleteFile(outputName); } catch {}
   }
 }
