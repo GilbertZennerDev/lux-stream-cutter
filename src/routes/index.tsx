@@ -453,6 +453,23 @@ function Dashboard() {
 
   const run = async () => {
     if (!file) return;
+    // MPEG-TS through ffmpeg.wasm's cut/concat filter_complex path is
+    // fragile — the WASM FS crashes ("ErrnoError: FS error") when the
+    // stream-copy or filter graph fails to produce an output. If we've
+    // already remuxed the TS to MP4 for the source preview, use that;
+    // otherwise ask the user to wait for the remux to finish.
+    if (isTransportStream(file) && !sourcePreviewBlob) {
+      if (isPreparingSourcePreview) {
+        toast.error("Still preparing the .ts source for cutting — try again in a few seconds.");
+      } else if (sourcePreviewError) {
+        toast.error(`Cannot cut this .ts file: ${sourcePreviewError}`);
+      } else {
+        toast.error("This .ts file hasn't been prepared for cutting yet.");
+      }
+      return;
+    }
+    const sourceForCut: Blob =
+      isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file;
     setError(null);
     setClipBlob(null); setAudioBlob(null); setSrtText(null); setSubbedBlob(null);
     setLogs([]);
@@ -464,13 +481,13 @@ function Dashboard() {
       if (cancelledRef.current) throw new Error("Cancelled");
     };
     try {
-      let workingVideo: Blob = file;
+      let workingVideo: Blob = sourceForCut;
 
       // Stage 1: Cut (skipped in subs-only mode)
       if (mode !== "subs-only") {
         setStage("cutting");
         if (!durationInfo.ok) throw new Error(durationInfo.msg);
-        const cut = await cutAndConcat(file, durationInfo.parsed, setProgress, { lowPerf, maxHeight });
+        const cut = await cutAndConcat(sourceForCut, durationInfo.parsed, setProgress, { lowPerf, maxHeight });
         checkCancel();
         const clip = new Blob([cut as BlobPart], { type: "video/mp4" });
         setClipBlob(clip);
