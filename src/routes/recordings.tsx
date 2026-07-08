@@ -434,7 +434,7 @@ function AudioBadge({ recording }: { recording: RecordingRow }) {
 
 function formatAudioDetails(recording: RecordingRow): string | null {
   const details = recording.audio_details;
-  if (!details) return null;
+  if (!details || typeof details !== "object" || Array.isArray(details)) return null;
   const audioSegments = typeof details.capturedSegments === "number" ? details.capturedSegments : null;
   const streams = typeof details.streams === "string" ? details.streams : null;
   if (audioSegments !== null && streams) return `${audioSegments} audio segments · ${streams}`;

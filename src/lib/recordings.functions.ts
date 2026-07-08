@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { Json } from "@/integrations/supabase/types";
 
 const RECORDINGS_BUCKET = "recordings";
 const DOWNLOAD_EXPIRES_SEC = 60 * 60; // 1h
@@ -22,7 +23,7 @@ const MarkReadyInput = z.object({
   endedAt: z.string(),
   sizeBytes: z.number().int().nonnegative(),
   audioStatus: z.string().max(40).nullable().optional(),
-  audioDetails: z.record(z.unknown()).nullable().optional(),
+  audioDetails: z.record(z.any()).nullable().optional(),
 });
 
 const MarkFailedInput = z.object({
@@ -91,7 +92,7 @@ export const markRecordingReady = createServerFn({ method: "POST" })
         ended_at: data.endedAt,
         size_bytes: data.sizeBytes,
         audio_status: data.audioStatus ?? null,
-        audio_details: data.audioDetails ?? null,
+        audio_details: (data.audioDetails ?? null) as Json | null,
       })
       .eq("id", data.id)
       .eq("user_id", context.userId);
@@ -129,7 +130,7 @@ export interface RecordingRow {
   transcribed_at: string | null;
   full_copy: boolean;
   audio_status: string | null;
-  audio_details: Record<string, unknown> | null;
+  audio_details: Json | null;
 }
 
 export const listRecordings = createServerFn({ method: "GET" })

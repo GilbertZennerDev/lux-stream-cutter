@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { z } from "zod";
+import type { Json } from "@/integrations/supabase/types";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -29,7 +30,7 @@ const ReadyInput = z.object({
   endedAt: z.string(),
   sizeBytes: z.number().int().nonnegative(),
   audioStatus: z.string().max(40).nullable().optional(),
-  audioDetails: z.record(z.unknown()).nullable().optional(),
+  audioDetails: z.record(z.any()).nullable().optional(),
 });
 
 const FailedInput = z.object({
@@ -37,7 +38,7 @@ const FailedInput = z.object({
   id: z.string().uuid(),
   error: z.string().max(500),
   audioStatus: z.string().max(40).nullable().optional(),
-  audioDetails: z.record(z.unknown()).nullable().optional(),
+  audioDetails: z.record(z.any()).nullable().optional(),
 });
 
 const Input = z.discriminatedUnion("action", [CreateInput, ReadyInput, FailedInput]);
@@ -124,7 +125,7 @@ export const Route = createFileRoute("/api/public/hooks/worker-recording")({
                 ended_at: parsed.endedAt,
                 size_bytes: parsed.sizeBytes,
                 audio_status: parsed.audioStatus ?? null,
-                audio_details: parsed.audioDetails ?? null,
+                audio_details: (parsed.audioDetails ?? null) as Json | null,
               })
               .eq("id", parsed.id);
             if (error) throw new Error(error.message);
@@ -137,7 +138,7 @@ export const Route = createFileRoute("/api/public/hooks/worker-recording")({
                 status: "failed",
                 error: parsed.error,
                 audio_status: parsed.audioStatus ?? "failed",
-                audio_details: parsed.audioDetails ?? null,
+                audio_details: (parsed.audioDetails ?? null) as Json | null,
               })
             .eq("id", parsed.id);
           return json({ ok: true });
