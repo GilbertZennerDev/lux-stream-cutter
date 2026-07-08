@@ -1032,9 +1032,11 @@ function Dashboard() {
             </div>
           </div>
           <nav className="flex items-center gap-1 text-sm">
+            {/*
             <Link to="/studio" className="px-3 py-1.5 rounded-md hover:bg-muted flex items-center gap-1.5">
               <Radio className="h-4 w-4" /> Studio
             </Link>
+            */}
             <Link to="/recordings" className="px-3 py-1.5 rounded-md hover:bg-muted flex items-center gap-1.5">
               <Library className="h-4 w-4" /> Recordings
             </Link>
