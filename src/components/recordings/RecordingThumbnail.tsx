@@ -185,10 +185,25 @@ export function RecordingThumbnail({ recordingId, storagePath, ready }: Props) {
   const cancelled = useRef(false);
 
   useEffect(() => {
+    cancelled.current = false;
+    // Pick up thumbnails set from elsewhere (e.g. right after an upload).
+    const cached = cache.get(recordingId);
+    if (cached && cached !== src) setSrc(cached);
+    let set = listeners.get(recordingId);
+    if (!set) {
+      set = new Set();
+      listeners.set(recordingId, set);
+    }
+    const cb = (url: string) => {
+      if (!cancelled.current) setSrc(url);
+    };
+    set.add(cb);
     return () => {
       cancelled.current = true;
+      set!.delete(cb);
+      if (set!.size === 0) listeners.delete(recordingId);
     };
-  }, []);
+  }, [recordingId, src]);
 
   const handleClick = () => {
     if (!ready || loading || src) return;
