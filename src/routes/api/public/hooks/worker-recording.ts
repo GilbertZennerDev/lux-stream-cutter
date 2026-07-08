@@ -41,7 +41,15 @@ const FailedInput = z.object({
   audioDetails: z.record(z.any()).nullable().optional(),
 });
 
-const Input = z.discriminatedUnion("action", [CreateInput, ReadyInput, FailedInput]);
+// Called by the worker on startup. Marks any row this worker owns that is
+// still "uploading" as failed, so a crash/redeploy self-heals instead of
+// waiting for the 30-min janitor.
+const ReapInput = z.object({
+  action: z.literal("reap"),
+  reason: z.string().max(200).optional(),
+});
+
+const Input = z.discriminatedUnion("action", [CreateInput, ReadyInput, FailedInput, ReapInput]);
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
