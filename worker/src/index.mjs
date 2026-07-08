@@ -6,7 +6,7 @@
 
 import { isInSession, nextSessionWindow } from "./schedule.mjs";
 import { startRecording } from "./recorder.mjs";
-import { createRecording, markReady, markFailed, uploadToSignedUrl } from "./uploader.mjs";
+import { createRecording, markReady, markFailed, uploadFileToSignedUrl } from "./uploader.mjs";
 
 const PLAYLIST_URL =
   process.env.PLAYLIST_URL ??
@@ -17,9 +17,15 @@ const POLL_MS = 60_000; // schedule check cadence
 
 const log = (m) => console.log(`[worker] ${new Date().toISOString()} ${m}`);
 
-async function uploadChunk({ buffer, startedAt, endedAt, sessionDate, chunkIndex, sourceUrl, audio }) {
-  if (buffer.length === 0) {
+async function uploadChunk({ result, startedAt, endedAt, sessionDate, chunkIndex, sourceUrl }) {
+  const audioInfo = result.audioInfo;
+  const audio = audioInfo
+    ? { status: audioInfo.outputHasAudio ? "verified" : "missing", details: audioInfo }
+    : { status: "unknown", details: null };
+
+  if (result.sizeBytes === 0) {
     log(`chunk ${chunkIndex} empty, skip`);
+    await result.cleanup();
     return;
   }
   let created;
@@ -32,28 +38,31 @@ async function uploadChunk({ buffer, startedAt, endedAt, sessionDate, chunkIndex
     });
   } catch (err) {
     log(`create failed for chunk ${chunkIndex}: ${err.message}`);
+    await result.cleanup();
     return;
   }
   try {
-    await uploadToSignedUrl(created.uploadUrl, buffer, "video/mp2t");
+    await uploadFileToSignedUrl(created.uploadUrl, result.path, "video/mp2t");
     await markReady({
       id: created.id,
       endedAt: endedAt.toISOString(),
-      sizeBytes: buffer.length,
-      audioStatus: audio?.status ?? null,
-      audioDetails: audio?.details ?? null,
+      sizeBytes: result.sizeBytes,
+      audioStatus: audio.status,
+      audioDetails: audio.details,
     });
-    log(`chunk ${chunkIndex} uploaded (${(buffer.length / 1024 / 1024).toFixed(1)} MB) audio=${audio?.status ?? "unknown"}`);
+    log(`chunk ${chunkIndex} uploaded (${(result.sizeBytes / 1024 / 1024).toFixed(1)} MB) audio=${audio.status}`);
   } catch (err) {
     log(`upload failed for chunk ${chunkIndex}: ${err.message}`);
     try {
       await markFailed({
         id: created.id,
         error: err.message.slice(0, 500),
-        audioStatus: audio?.status ?? "failed",
-        audioDetails: audio?.details ?? null,
+        audioStatus: audio.status,
+        audioDetails: audio.details,
       });
     } catch {}
+  } finally {
+    await result.cleanup();
   }
 }
 
@@ -83,6 +92,32 @@ async function markChunkFailed({ error, startedAt, endedAt, sessionDate, chunkIn
   }
 }
 
+async function finalizeAndUpload({ recorder, startedAt, sessionDate, chunkIndex }) {
+  try {
+    const result = await recorder.stop();
+    log(`chunk ${chunkIndex} captured ${result.videoSegments} video / ${result.audioSegments} audio segments`);
+    await uploadChunk({
+      result,
+      startedAt,
+      endedAt: new Date(),
+      sessionDate,
+      chunkIndex,
+      sourceUrl: PLAYLIST_URL,
+    });
+  } catch (err) {
+    log(`finalize chunk ${chunkIndex} err: ${err.message}`);
+    await markChunkFailed({
+      error: err.message,
+      startedAt,
+      endedAt: new Date(),
+      sessionDate,
+      chunkIndex,
+      sourceUrl: PLAYLIST_URL,
+      audio: { status: "failed", details: { error: err.message } },
+    });
+  }
+}
+
 async function runSession(session) {
   log(`session start · date=${session.sessionDate} until=${session.end.toISOString()}`);
   let chunkIndex = 0;
@@ -103,7 +138,6 @@ async function runSession(session) {
   await startNewChunk();
 
   while (new Date() < session.end) {
-    // wait until either chunk-rotation time or session end.
     const now = Date.now();
     const rotateAt = chunkStart.getTime() + CHUNK_MS;
     const sleepMs = Math.max(500, Math.min(rotateAt, session.end.getTime()) - now);
@@ -120,69 +154,22 @@ async function runSession(session) {
       if (stillInSession) await startNewChunk();
 
       // finalize previous chunk in background
-      (async () => {
-        try {
-          const buffer = await prev.stop();
-          const audioInfo = prev.getAudioVerification?.();
-          const audio = audioInfo
-            ? { status: audioInfo.outputHasAudio ? "verified" : "missing", details: audioInfo }
-            : { status: "unknown", details: null };
-          log(`chunk ${prevIdx} captured ${prev.getSegmentCount()} video / ${prev.getAudioSegmentCount?.() ?? 0} audio segments`);
-          await uploadChunk({
-            buffer,
-            startedAt: prevStart,
-            endedAt: new Date(),
-            sessionDate: session.sessionDate,
-            chunkIndex: prevIdx,
-            sourceUrl: PLAYLIST_URL,
-            audio,
-          });
-        } catch (err) {
-          log(`finalize chunk ${prevIdx} err: ${err.message}`);
-          await markChunkFailed({
-            error: err.message,
-            startedAt: prevStart,
-            endedAt: new Date(),
-            sessionDate: session.sessionDate,
-            chunkIndex: prevIdx,
-            sourceUrl: PLAYLIST_URL,
-            audio: { status: "failed", details: { error: err.message } },
-          });
-        }
-      })();
+      finalizeAndUpload({
+        recorder: prev,
+        startedAt: prevStart,
+        sessionDate: session.sessionDate,
+        chunkIndex: prevIdx,
+      });
     }
   }
 
-  // session ended — flush current chunk if any
   if (recorder) {
-    try {
-      const buffer = await recorder.stop();
-      const audioInfo = recorder.getAudioVerification?.();
-      const audio = audioInfo
-        ? { status: audioInfo.outputHasAudio ? "verified" : "missing", details: audioInfo }
-        : { status: "unknown", details: null };
-      log(`chunk ${chunkIndex} captured ${recorder.getSegmentCount()} video / ${recorder.getAudioSegmentCount?.() ?? 0} audio segments`);
-      await uploadChunk({
-        buffer,
-        startedAt: chunkStart,
-        endedAt: new Date(),
-        sessionDate: session.sessionDate,
-        chunkIndex,
-        sourceUrl: PLAYLIST_URL,
-        audio,
-      });
-    } catch (err) {
-      log(`final chunk err: ${err.message}`);
-      await markChunkFailed({
-        error: err.message,
-        startedAt: chunkStart,
-        endedAt: new Date(),
-        sessionDate: session.sessionDate,
-        chunkIndex,
-        sourceUrl: PLAYLIST_URL,
-        audio: { status: "failed", details: { error: err.message } },
-      });
-    }
+    await finalizeAndUpload({
+      recorder,
+      startedAt: chunkStart,
+      sessionDate: session.sessionDate,
+      chunkIndex,
+    });
   }
   log(`session complete`);
 }
@@ -198,7 +185,6 @@ async function main() {
         const next = nextSessionWindow();
         const waitMs = Math.max(POLL_MS, next.start.getTime() - Date.now());
         log(`idle · next session ${next.start.toISOString()} (in ${(waitMs / 60000).toFixed(1)} min)`);
-        // Sleep in POLL_MS increments so restarts / clock drift stay responsive.
         await new Promise((r) => setTimeout(r, Math.min(waitMs, POLL_MS)));
       }
     } catch (err) {
