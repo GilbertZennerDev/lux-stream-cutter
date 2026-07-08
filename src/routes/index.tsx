@@ -1,12 +1,28 @@
 import { createFileRoute, Link, useSearch, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { getRecordingDownloadUrl, saveRecordingTranscript, createRecording, markRecordingReady } from "@/lib/recordings.functions";
+import {
+  getRecordingDownloadUrl,
+  saveRecordingTranscript,
+  createRecording,
+  markRecordingReady,
+} from "@/lib/recordings.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Radio, Library, Film, Camera } from "lucide-react";
 import {
-  CheckCircle2, Circle, Loader2, Upload, Download, Scissors,
-  Music, Cloud, FileText, Type, Flame, Play, X,
+  CheckCircle2,
+  Circle,
+  Loader2,
+  Upload,
+  Download,
+  Scissors,
+  Music,
+  Cloud,
+  FileText,
+  Type,
+  Flame,
+  Play,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -22,7 +38,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 
 import { parseTimeToSeconds, formatSeconds } from "@/lib/subtitles/parseTime";
-import { cutAndConcat, extractAudioMp3, burnSubtitles, remuxTsToMp4, cuesToAss, getVideoDimensions } from "@/lib/ffmpeg/operations";
+import {
+  cutAndConcat,
+  extractAudioMp3,
+  burnSubtitles,
+  remuxTsToMp4,
+  cuesToAss,
+  getVideoDimensions,
+} from "@/lib/ffmpeg/operations";
 import { onFfmpegLog, cancelFFmpeg } from "@/lib/ffmpeg/client";
 import { luxasrJsonToCues, cuesToSrt, type SrtCue } from "@/lib/subtitles/luxasrToSrt";
 import { shortenCues } from "@/lib/subtitles/shortenSrt";
@@ -35,8 +58,6 @@ import {
   DEFAULT_STREAM_URL,
 } from "@/lib/hls/shared-recorder";
 import { SubtitlePreview } from "@/components/cutter/SubtitlePreview";
-
-
 
 const indexSearchSchema = z.object({
   recording: z.string().uuid().optional(),
@@ -63,9 +84,7 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-type Stage =
-  | "idle" | "cutting" | "extracting" | "asr"
-  | "srt" | "shortening" | "burning" | "done" | "error";
+type Stage = "idle" | "cutting" | "extracting" | "asr" | "srt" | "shortening" | "burning" | "done" | "error";
 
 type Mode = "full" | "cut-only" | "subs-only";
 
@@ -73,7 +92,7 @@ type Mode = "full" | "cut-only" | "subs-only";
 async function isAudioSilent(blob: Blob, threshold = 0.005): Promise<boolean> {
   try {
     const AC: typeof AudioContext =
-      (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext);
+      window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AC) return false;
     const ctx = new AC();
     try {
@@ -83,7 +102,8 @@ async function isAudioSilent(blob: Blob, threshold = 0.005): Promise<boolean> {
       const data = decoded.getChannelData(0);
       // Sample up to ~20k points for speed
       const step = Math.max(1, Math.floor(data.length / 20000));
-      let sum = 0, n = 0;
+      let sum = 0,
+        n = 0;
       for (let i = 0; i < data.length; i += step) {
         const v = data[i];
         sum += v * v;
@@ -183,9 +203,12 @@ async function downloadRecordingFile(
         : `Downloading ${formatDownloadBytes(received)}`,
     );
   }
-  return new File(chunks.map((chunk) => chunk as BlobPart), fileName, { type });
+  return new File(
+    chunks.map((chunk) => chunk as BlobPart),
+    fileName,
+    { type },
+  );
 }
-
 
 const STAGES: { key: Stage; label: string; icon: typeof Circle }[] = [
   { key: "cutting", label: "Cutting", icon: Scissors },
@@ -233,7 +256,6 @@ function Dashboard() {
     return () => clearInterval(id);
   }, []);
 
-
   // If ?recording=<id> is present, fetch it and load into the pipeline.
   useEffect(() => {
     const id = search.recording;
@@ -259,8 +281,7 @@ function Dashboard() {
       try {
         toast.message("Loading recording…");
         setRecordingLoadLabel("Creating download link…");
-        const { url, path, title, transcript, transcriptSrt } =
-          await getRecordingDownloadUrl({ data: { id } });
+        const { url, path, title, transcript, transcriptSrt } = await getRecordingDownloadUrl({ data: { id } });
         const name = path.split("/").pop() ?? "recording.ts";
         const f = await downloadRecordingFile(url, name, setRecordingLoadLabel);
         setFile(f);
@@ -365,13 +386,7 @@ function Dashboard() {
     }
   }, [snapshotBusy, snapshotUrl]);
 
-
-
-
-
-  const [segments, setSegments] = useState<Array<{ start: string; end: string }>>([
-    { start: "00:00", end: "00:30" },
-  ]);
+  const [segments, setSegments] = useState<Array<{ start: string; end: string }>>([{ start: "00:00", end: "00:30" }]);
   const [activeSeg, setActiveSeg] = useState(0);
 
   const updateSeg = (i: number, patch: Partial<{ start: string; end: string }>) =>
@@ -455,8 +470,13 @@ function Dashboard() {
     }
   }, [segments]);
 
-  const isRunning = stage === "cutting" || stage === "extracting" ||
-    stage === "asr" || stage === "srt" || stage === "shortening" || stage === "burning";
+  const isRunning =
+    stage === "cutting" ||
+    stage === "extracting" ||
+    stage === "asr" ||
+    stage === "srt" ||
+    stage === "shortening" ||
+    stage === "burning";
 
   const cancel = useCallback(async () => {
     if (!isRunning) return;
@@ -486,10 +506,12 @@ function Dashboard() {
       }
       return;
     }
-    const sourceForCut: Blob =
-      isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file;
+    const sourceForCut: Blob = isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file;
     setError(null);
-    setClipBlob(null); setAudioBlob(null); setSrtText(null); setSubbedBlob(null);
+    setClipBlob(null);
+    setAudioBlob(null);
+    setSrtText(null);
+    setSubbedBlob(null);
     setLogs([]);
     setProgress(0);
     cancelledRef.current = false;
@@ -517,7 +539,6 @@ function Dashboard() {
         workingVideo = clip;
         setProgress(1);
       }
-
 
       if (mode === "cut-only") {
         setStage("done");
@@ -555,7 +576,6 @@ function Dashboard() {
         return;
       }
 
-
       // Stage 3: LuxASR
       moveToStage("asr");
       setProgress(0);
@@ -587,9 +607,7 @@ function Dashboard() {
         checkCancel();
         if (Date.now() - startedAt > MAX_MS) throw new Error("LuxASR polling timed out (15 min)");
         if (Date.now() - lastProgressAt > STALL_MS)
-          throw new Error(
-            `LuxASR stuck in "${lastStatus || "pending"}" for 3 min — aborting`,
-          );
+          throw new Error(`LuxASR stuck in "${lastStatus || "pending"}" for 3 min — aborting`);
         await new Promise((r) => setTimeout(r, 3000));
         checkCancel();
         const pollRes = await fetch(`/api/asr?jobId=${encodeURIComponent(jobId)}`, {
@@ -613,7 +631,6 @@ function Dashboard() {
 
       const asrJson = { result: asrResult };
       appendLog("[ASR] Transcription received");
-
 
       // Stage 4: SRT
       moveToStage("srt");
@@ -646,8 +663,12 @@ function Dashboard() {
         setProgress(0);
         const dims = await getVideoDimensions(workingVideo);
         const ass = cuesToAss(workingCues, {
-          fontSize, outline: subOutline, xPct: subX, yPct: subY,
-          videoWidth: dims.width, videoHeight: dims.height,
+          fontSize,
+          outline: subOutline,
+          xPct: subX,
+          yPct: subY,
+          videoWidth: dims.width,
+          videoHeight: dims.height,
         });
         const subbed = await burnSubtitles(workingVideo, ass, setProgress, { lowPerf, maxHeight });
         checkCancel();
@@ -685,7 +706,9 @@ function Dashboard() {
     cancelledRef.current = false;
     const ac = new AbortController();
     abortRef.current = ac;
-    const checkCancel = () => { if (cancelledRef.current) throw new Error("Cancelled"); };
+    const checkCancel = () => {
+      if (cancelledRef.current) throw new Error("Cancelled");
+    };
     let activeStage: Stage = "idle";
     const moveToStage = (next: Stage) => {
       activeStage = next;
@@ -717,8 +740,7 @@ function Dashboard() {
     try {
       moveToStage("extracting");
       setProgress(0);
-      const audioSource: Blob =
-        isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file;
+      const audioSource: Blob = isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file;
       const audioBytes = await extractAudioMp3(audioSource, setProgress, { lowPerf });
       checkCancel();
       const audio = new Blob([audioBytes as BlobPart], { type: "audio/mpeg" });
@@ -760,7 +782,10 @@ function Dashboard() {
           throw new Error(`LuxASR: ${body.error ?? pollRes.statusText}`);
         }
         const p = (await pollRes.json()) as { status: string; result?: unknown };
-        if (p.status === "completed") { asrResult = p.result; break; }
+        if (p.status === "completed") {
+          asrResult = p.result;
+          break;
+        }
         if (p.status !== lastStatus) {
           lastStatus = p.status;
           lastProgressAt = Date.now();
@@ -829,11 +854,8 @@ function Dashboard() {
       );
       return;
     }
-    const sourceForCut: Blob =
-      isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file;
-    const picked = cues
-      .filter((c) => selectedCues.has(c.index))
-      .sort((a, b) => a.start - b.start);
+    const sourceForCut: Blob = isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file;
+    const picked = cues.filter((c) => selectedCues.has(c.index)).sort((a, b) => a.start - b.start);
     if (picked.length === 0) {
       toast.error("Select at least one transcript block first");
       return;
@@ -846,7 +868,9 @@ function Dashboard() {
     cancelledRef.current = false;
     const ac = new AbortController();
     abortRef.current = ac;
-    const checkCancel = () => { if (cancelledRef.current) throw new Error("Cancelled"); };
+    const checkCancel = () => {
+      if (cancelledRef.current) throw new Error("Cancelled");
+    };
     let activeStage: Stage = "idle";
     const moveToStage = (next: Stage) => {
       activeStage = next;
@@ -886,8 +910,12 @@ function Dashboard() {
       setProgress(0);
       const dims = await getVideoDimensions(clip);
       const ass = cuesToAss(remapped, {
-        fontSize, outline: subOutline, xPct: subX, yPct: subY,
-        videoWidth: dims.width, videoHeight: dims.height,
+        fontSize,
+        outline: subOutline,
+        xPct: subX,
+        yPct: subY,
+        videoWidth: dims.width,
+        videoHeight: dims.height,
       });
       const subbed = await burnSubtitles(clip, ass, setProgress, { lowPerf, maxHeight });
       checkCancel();
@@ -916,33 +944,24 @@ function Dashboard() {
 
   const canRun = !!file && !isRunning;
 
-
-
   const download = (blob: Blob | null, name: string) => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = name; a.click();
+    a.href = url;
+    a.download = name;
+    a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const clipPreviewUrl = useMemo(
-    () => (clipBlob ? URL.createObjectURL(clipBlob) : null),
-    [clipBlob],
-  );
-  const subbedPreviewUrl = useMemo(
-    () => (subbedBlob ? URL.createObjectURL(subbedBlob) : null),
-    [subbedBlob],
-  );
+  const clipPreviewUrl = useMemo(() => (clipBlob ? URL.createObjectURL(clipBlob) : null), [clipBlob]);
+  const subbedPreviewUrl = useMemo(() => (subbedBlob ? URL.createObjectURL(subbedBlob) : null), [subbedBlob]);
 
-  const sourcePreviewUrl = useMemo(
-    () => {
-      if (file && isTransportStream(file) && !sourcePreviewBlob) return null;
-      const previewSource = sourcePreviewBlob ?? file;
-      return previewSource ? URL.createObjectURL(previewSource) : null;
-    },
-    [file, sourcePreviewBlob],
-  );
+  const sourcePreviewUrl = useMemo(() => {
+    if (file && isTransportStream(file) && !sourcePreviewBlob) return null;
+    const previewSource = sourcePreviewBlob ?? file;
+    return previewSource ? URL.createObjectURL(previewSource) : null;
+  }, [file, sourcePreviewBlob]);
   useEffect(() => {
     return () => {
       if (sourcePreviewUrl) URL.revokeObjectURL(sourcePreviewUrl);
@@ -986,7 +1005,9 @@ function Dashboard() {
         v.currentTime = Math.min(t, v.duration || t);
         v.play().catch(() => {});
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   };
 
   // Reseek previews when the active segment changes.
@@ -997,12 +1018,7 @@ function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSeg, sourcePreviewUrl]);
 
-
-
   return (
-
-
-
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b">
         <div className="mx-auto max-w-7xl px-6 py-4 flex items-center justify-between">
@@ -1011,12 +1027,8 @@ function Dashboard() {
               <Scissors className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold leading-tight">
-                Video Cutter &amp; Auto-Subtitler Pro
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                Browser-based · Luxembourgish (LuxASR)
-              </p>
+              <h1 className="text-lg font-semibold leading-tight">Video Cutter &amp; Auto-Subtitler Pro</h1>
+              <p className="text-xs text-muted-foreground">Browser-based · Luxembourgish (LuxASR)</p>
             </div>
           </div>
           <nav className="flex items-center gap-1 text-sm">
@@ -1036,7 +1048,6 @@ function Dashboard() {
       <main className="mx-auto max-w-7xl px-6 py-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {/* LEFT: Controls */}
         <div className="space-y-6">
-
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">1. Source video</CardTitle>
@@ -1052,11 +1063,13 @@ function Dashboard() {
                   <Upload className="h-6 w-6 mb-2 text-muted-foreground" />
                 )}
                 <p className="text-sm text-center px-4 break-all">
-                  {loadingRecording ? (recordingLoadLabel ?? "Loading recording…") : file ? (sourceTitle ?? file.name) : "Click or drop a video file"}
+                  {loadingRecording
+                    ? (recordingLoadLabel ?? "Loading recording…")
+                    : file
+                      ? (sourceTitle ?? file.name)
+                      : "Click or drop a video file"}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  MP4 / MKV / MOV / TS · recommended ≤ 500 MB
-                </p>
+                <p className="text-xs text-muted-foreground mt-1">MP4 / MKV / MOV / TS · recommended ≤ 500 MB</p>
                 <input
                   id="video-input"
                   type="file"
@@ -1093,13 +1106,12 @@ function Dashboard() {
                 </p>
               )}
               {sourcePreviewError && (
-                <p className="text-xs text-destructive mt-2">
-                  Source preview failed: {sourcePreviewError}
-                </p>
+                <p className="text-xs text-destructive mt-2">Source preview failed: {sourcePreviewError}</p>
               )}
             </CardContent>
           </Card>
 
+          {/*
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
@@ -1145,23 +1157,22 @@ function Dashboard() {
               )}
             </CardContent>
           </Card>
-
-
+        */}
 
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center justify-between">
                 <span>Find cut points via transcript</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!file || isRunning}
-                  onClick={transcribeForCuts}
-                >
-                  {isRunning && (stage === "extracting" || stage === "asr" || stage === "srt" || stage === "shortening") ? (
-                    <><Loader2 className="h-3 w-3 mr-2 animate-spin" /> Transcribing…</>
+                <Button size="sm" variant="outline" disabled={!file || isRunning} onClick={transcribeForCuts}>
+                  {isRunning &&
+                  (stage === "extracting" || stage === "asr" || stage === "srt" || stage === "shortening") ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-2 animate-spin" /> Transcribing…
+                    </>
                   ) : (
-                    <><FileText className="h-3 w-3 mr-2" /> Transcribe</>
+                    <>
+                      <FileText className="h-3 w-3 mr-2" /> Transcribe
+                    </>
                   )}
                 </Button>
               </CardTitle>
@@ -1169,10 +1180,9 @@ function Dashboard() {
             <CardContent>
               {cues.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  Transcribes the <strong>entire</strong> video (no cutting) so you can browse
-                  subtitle blocks with timestamps. Click any block to jump the previews, use
-                  its buttons to set Start / End on the cut range above, or tick the checkbox
-                  on multiple blocks and use <strong>Cut selected</strong> to build a video
+                  Transcribes the <strong>entire</strong> video (no cutting) so you can browse subtitle blocks with
+                  timestamps. Click any block to jump the previews, use its buttons to set Start / End on the cut range
+                  above, or tick the checkbox on multiple blocks and use <strong>Cut selected</strong> to build a video
                   from only those blocks (with subtitles).
                 </p>
               ) : (
@@ -1195,9 +1205,13 @@ function Dashboard() {
                       onClick={cutFromSelectedCues}
                     >
                       {isRunning && (stage === "cutting" || stage === "burning") ? (
-                        <><Loader2 className="h-3 w-3 mr-2 animate-spin" /> Cutting…</>
+                        <>
+                          <Loader2 className="h-3 w-3 mr-2 animate-spin" /> Cutting…
+                        </>
                       ) : (
-                        <><Scissors className="h-3 w-3 mr-2" /> Cut selected ({selectedCues.size})</>
+                        <>
+                          <Scissors className="h-3 w-3 mr-2" /> Cut selected ({selectedCues.size})
+                        </>
                       )}
                     </Button>
                   </div>
@@ -1231,13 +1245,17 @@ function Dashboard() {
                               )}
                               <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                                 <Button
-                                  size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-[11px]"
                                   onClick={() => setStartFromSeconds(c.start)}
                                 >
                                   ▸ Start
                                 </Button>
                                 <Button
-                                  size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-[11px]"
                                   onClick={() => setEndFromSeconds(c.end)}
                                 >
                                   End ◂
@@ -1253,7 +1271,9 @@ function Dashboard() {
                                   </span>
                                   {hasOverride && (
                                     <Button
-                                      type="button" size="sm" variant="ghost"
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
                                       className="h-6 px-2 text-[11px]"
                                       onClick={() => resetCuePos(c.index)}
                                     >
@@ -1276,7 +1296,10 @@ function Dashboard() {
                                       <span className="text-[11px] text-muted-foreground">{Math.round(cx)}%</span>
                                     </div>
                                     <Slider
-                                      min={0} max={100} step={1} value={[Math.round(cx)]}
+                                      min={0}
+                                      max={100}
+                                      step={1}
+                                      value={[Math.round(cx)]}
                                       onValueChange={(v) => updateCuePos(c.index, { xPct: v[0] })}
                                     />
                                   </div>
@@ -1286,7 +1309,10 @@ function Dashboard() {
                                       <span className="text-[11px] text-muted-foreground">{Math.round(cy)}%</span>
                                     </div>
                                     <Slider
-                                      min={0} max={100} step={1} value={[Math.round(cy)]}
+                                      min={0}
+                                      max={100}
+                                      step={1}
+                                      value={[Math.round(cy)]}
                                       onValueChange={(v) => updateCuePos(c.index, { yPct: v[0] })}
                                     />
                                   </div>
@@ -1302,7 +1328,6 @@ function Dashboard() {
               )}
             </CardContent>
           </Card>
-
 
           <Card>
             <CardHeader className="pb-3">
@@ -1354,13 +1379,7 @@ function Dashboard() {
                         )}
                       </div>
                     ))}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-7"
-                      onClick={addSeg}
-                    >
+                    <Button type="button" size="sm" variant="ghost" className="h-7" onClick={addSeg}>
                       + Add segment
                     </Button>
                   </div>
@@ -1386,7 +1405,10 @@ function Dashboard() {
                             onLoadedMetadata={() => seekTo(startVideoRef, segments[activeSeg].start)}
                           />
                           <Button
-                            type="button" size="sm" variant="outline" className="w-full h-7 text-xs"
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="w-full h-7 text-xs"
                             onClick={() => seekTo(startVideoRef, segments[activeSeg].start)}
                           >
                             <Play className="h-3 w-3 mr-1" /> Preview start
@@ -1414,7 +1436,10 @@ function Dashboard() {
                             onLoadedMetadata={() => seekTo(endVideoRef, segments[activeSeg].end)}
                           />
                           <Button
-                            type="button" size="sm" variant="outline" className="w-full h-7 text-xs"
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="w-full h-7 text-xs"
                             onClick={() => seekTo(endVideoRef, segments[activeSeg].end)}
                           >
                             <Play className="h-3 w-3 mr-1" /> Preview end
@@ -1436,7 +1461,9 @@ function Dashboard() {
                           onClick={() => setActiveSeg(i)}
                         >
                           <span>#{i + 1}</span>
-                          <span>{s.start} → {s.end}</span>
+                          <span>
+                            {s.start} → {s.end}
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -1455,7 +1482,6 @@ function Dashboard() {
                 </div>
               )}
 
-
               {mode !== "cut-only" && (
                 <div className="space-y-4 pt-1">
                   <div>
@@ -1463,10 +1489,7 @@ function Dashboard() {
                       <Label>Font size</Label>
                       <span className="text-xs text-muted-foreground">{fontSize}px</span>
                     </div>
-                    <Slider
-                      min={14} max={64} step={1} value={[fontSize]}
-                      onValueChange={(v) => setFontSize(v[0])}
-                    />
+                    <Slider min={14} max={64} step={1} value={[fontSize]} onValueChange={(v) => setFontSize(v[0])} />
                   </div>
 
                   <div>
@@ -1477,14 +1500,18 @@ function Dashboard() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mb-2">
-                      Zeih den Text am Preview, oder benotz d'Sliders. Iwwerholl gëtt op déi geschnidde Videosgréisst berechent.
+                      Zeih den Text am Preview, oder benotz d'Sliders. Iwwerholl gëtt op déi geschnidde Videosgréisst
+                      berechent.
                     </p>
                     <SubtitlePreview
                       xPct={subX}
                       yPct={subY}
                       fontSize={fontSize}
                       outline={subOutline}
-                      onChange={(x, y) => { setSubX(x); setSubY(y); }}
+                      onChange={(x, y) => {
+                        setSubX(x);
+                        setSubY(y);
+                      }}
                     />
                     <div className="mt-3 space-y-3">
                       <div>
@@ -1506,7 +1533,13 @@ function Dashboard() {
                           <Label className="text-xs">Schwaarze Bord (Outline)</Label>
                           <span className="text-xs text-muted-foreground">{subOutline}px</span>
                         </div>
-                        <Slider min={0} max={8} step={1} value={[subOutline]} onValueChange={(v) => setSubOutline(v[0])} />
+                        <Slider
+                          min={0}
+                          max={8}
+                          step={1}
+                          value={[subOutline]}
+                          onValueChange={(v) => setSubOutline(v[0])}
+                        />
                       </div>
                     </div>
                   </div>
@@ -1514,7 +1547,10 @@ function Dashboard() {
                     <div>
                       <Label htmlFor="maxSent">Max sentences / cue</Label>
                       <Input
-                        id="maxSent" type="number" min={1} max={5}
+                        id="maxSent"
+                        type="number"
+                        min={1}
+                        max={5}
                         value={maxSentences}
                         onChange={(e) => setMaxSentences(Math.max(1, Number(e.target.value) || 1))}
                       />
@@ -1522,7 +1558,10 @@ function Dashboard() {
                     <div>
                       <Label htmlFor="maxChars">Max chars / cue</Label>
                       <Input
-                        id="maxChars" type="number" min={30} max={200}
+                        id="maxChars"
+                        type="number"
+                        min={30}
+                        max={200}
                         value={maxChars}
                         onChange={(e) => setMaxChars(Math.max(30, Number(e.target.value) || 30))}
                       />
@@ -1531,9 +1570,7 @@ function Dashboard() {
                   <div className="flex items-center justify-between">
                     <div>
                       <Label htmlFor="burn">Burn subtitles into video</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Off = SRT file only (faster)
-                      </p>
+                      <p className="text-xs text-muted-foreground">Off = SRT file only (faster)</p>
                     </div>
                     <Switch id="burn" checked={burnIn} onCheckedChange={setBurnIn} />
                   </div>
@@ -1552,12 +1589,12 @@ function Dashboard() {
                       Kleiner = deutlich schneller beim Burn-in. Auch im Low-perf Modus wählbar.
                     </p>
                     <div className="grid grid-cols-4 gap-2">
-                      {([
+                      {[
                         { v: 0 as const, label: "Source" },
                         { v: 480 as const, label: "480p" },
                         { v: 720 as const, label: "720p" },
                         { v: 1080 as const, label: "1080p" },
-                      ]).map((o) => (
+                      ].map((o) => (
                         <Button
                           key={o.v}
                           type="button"
@@ -1574,24 +1611,19 @@ function Dashboard() {
               )}
 
               <div className="flex gap-2">
-                <Button
-                  onClick={run}
-                  disabled={!canRun}
-                  className="flex-1"
-                  size="lg"
-                >
+                <Button onClick={run} disabled={!canRun} className="flex-1" size="lg">
                   {isRunning ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running…</>
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running…
+                    </>
                   ) : (
-                    <><Play className="h-4 w-4 mr-2" /> Run</>
+                    <>
+                      <Play className="h-4 w-4 mr-2" /> Run
+                    </>
                   )}
                 </Button>
                 {isRunning && (
-                  <Button
-                    onClick={cancel}
-                    variant="destructive"
-                    size="lg"
-                  >
+                  <Button onClick={cancel} variant="destructive" size="lg">
                     <X className="h-4 w-4 mr-2" /> Cancel
                   </Button>
                 )}
@@ -1637,32 +1669,40 @@ function Dashboard() {
               )}
 
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" disabled={!clipBlob}
-                  onClick={() => download(clipBlob, "clip.mp4")}>
+                <Button variant="outline" size="sm" disabled={!clipBlob} onClick={() => download(clipBlob, "clip.mp4")}>
                   <Download className="h-4 w-4 mr-2" /> clip.mp4
                 </Button>
-                <Button variant="outline" size="sm" disabled={!audioBlob}
-                  onClick={() => download(audioBlob, "clip.mp3")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!audioBlob}
+                  onClick={() => download(audioBlob, "clip.mp3")}
+                >
                   <Download className="h-4 w-4 mr-2" /> clip.mp3
                 </Button>
-                <Button variant="outline" size="sm" disabled={!srtText}
-                  onClick={() => download(
-                    srtText ? new Blob([srtText], { type: "text/plain" }) : null,
-                    "subtitles.srt",
-                  )}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!srtText}
+                  onClick={() =>
+                    download(srtText ? new Blob([srtText], { type: "text/plain" }) : null, "subtitles.srt")
+                  }
+                >
                   <Download className="h-4 w-4 mr-2" /> subtitles.srt
                 </Button>
-                <Button variant="outline" size="sm" disabled={!subbedBlob}
-                  onClick={() => download(subbedBlob, "clip_subbed.mp4")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!subbedBlob}
+                  onClick={() => download(subbedBlob, "clip_subbed.mp4")}
+                >
                   <Download className="h-4 w-4 mr-2" /> clip_subbed.mp4
                 </Button>
               </div>
 
               {srtText && (
                 <details className="text-xs">
-                  <summary className="cursor-pointer text-muted-foreground">
-                    Preview SRT
-                  </summary>
+                  <summary className="cursor-pointer text-muted-foreground">Preview SRT</summary>
                   <pre className="mt-2 p-3 bg-muted rounded-md overflow-auto max-h-64 whitespace-pre-wrap">
                     {srtText}
                   </pre>
@@ -1691,16 +1731,24 @@ function Dashboard() {
       </main>
 
       <footer className="mx-auto max-w-7xl px-6 py-8 text-xs text-muted-foreground">
-        Processing runs entirely in your browser via ffmpeg.wasm. Only the extracted
-        audio is sent to LuxASR (uni.lu) for transcription. Keep this tab open while jobs run.
+        Processing runs entirely in your browser via ffmpeg.wasm. Only the extracted audio is sent to LuxASR (uni.lu)
+        for transcription. Keep this tab open while jobs run.
       </footer>
     </div>
   );
 }
 
 function PipelineStepper({
-  current, progress, mode, burnIn,
-}: { current: Stage; progress: number; mode: Mode; burnIn: boolean }) {
+  current,
+  progress,
+  mode,
+  burnIn,
+}: {
+  current: Stage;
+  progress: number;
+  mode: Mode;
+  burnIn: boolean;
+}) {
   const active = STAGES.filter((s) => {
     if (mode === "cut-only") return s.key === "cutting";
     if (mode === "subs-only" && s.key === "cutting") return false;
@@ -1739,19 +1787,14 @@ function PipelineStepper({
                 )}
                 <span>{s.label}</span>
               </div>
-              {i < active.length - 1 && (
-                <div className="w-4 h-px bg-border" />
-              )}
+              {i < active.length - 1 && <div className="w-4 h-px bg-border" />}
             </div>
           );
         })}
       </div>
       {current !== "idle" && current !== "done" && current !== "error" && (
         <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-          <div
-            className="h-full bg-primary transition-all"
-            style={{ width: `${Math.round(progress * 100)}%` }}
-          />
+          <div className="h-full bg-primary transition-all" style={{ width: `${Math.round(progress * 100)}%` }} />
         </div>
       )}
       {current === "idle" && (
@@ -1759,9 +1802,7 @@ function PipelineStepper({
           Upload a video and click <span className="font-medium">Run</span>.
         </p>
       )}
-      {current === "done" && (
-        <p className="text-xs text-primary">Done — download your files below.</p>
-      )}
+      {current === "done" && <p className="text-xs text-primary">Done — download your files below.</p>}
     </div>
   );
 }
