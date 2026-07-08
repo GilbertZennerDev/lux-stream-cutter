@@ -1,47 +1,39 @@
-## Root cause
+# Fix Recordings tab buttons
 
-The Fly worker is being killed mid-chunk (OOM on the default 256 MB `shared-cpu-1x`), so `uploadToSignedUrl` + `markReady` never run and the DB row is left at `uploading`.
+Audit every button on `/recordings` (row + header), reproduce each in the running preview, and fix the ones that don't behave correctly. Two are already reported broken: **Cut** and **Watch** (the Play/Preview icon).
 
-Evidence:
-- 6 hook calls in the last hour, all of them `create` (200). Zero `ready`, zero `failed`. If uploads were merely slow, we'd still see `ready`/`failed` eventually.
-- Every stuck row has `chunk_index = 0`. `runSession()` resets that counter to 0, so six 0's in one active session means the process restarted six times.
-- Timing: create → ~5 min → create → ~5 min… matches "spin up, buffer chunk in RAM, call `stop()` + `createRecording`, die before upload finishes".
-- Yesterday's session (before the memory pressure appeared) recorded chunks 0,1,2,3 with correct `size_bytes` on the same code — so the app logic is fine.
+## Buttons to verify
 
-Why memory: a 5-min Chamber TV MPEG-TS chunk is ~100–150 MB held as a Node `Buffer`. During rotation the worker briefly holds chunk N (uploading) and chunk N+1 (recording) at the same time → peak >250 MB → OOM.
+Per row (in `src/routes/recordings.tsx`, lines 294–344):
+1. **Cut** — should open the recording in the Cutter tab with the video loaded.
+2. **Transcript** (FileText icon) — opens the transcript editor dialog.
+3. **Watch** (Play icon) — opens an in-page preview dialog, remuxing `.ts` → MP4 on the fly.
+4. **Download** — triggers a signed-URL download.
+5. **Delete** (Trash icon) — confirms then deletes the row + storage object.
 
-## Fix (user action on Fly, no code change)
+Header:
+6. **Upload video** — picks files and uploads them into a new session.
+7. **Refresh** — re-fetches the list.
 
-```powershell
-fly scale memory 1024 --app luxstream-worker
-fly logs --app luxstream-worker
-```
+## Suspected root causes (to confirm during repro)
 
-Bumping to 1 GB gives ~4× headroom over peak. 2 GB if you want to also record the parallel full-session copy later without worrying.
+- **Cut** currently calls `navigate({ to: "/", search: { recording: r.id } as never })`. The `/` route reads `search.recording` in a `useEffect` and immediately calls `navigate({ to: "/", search: {}, replace: true })` in its `finally` block (index.tsx line 277). Likely bug: the URL-clearing navigation runs before/while the loader effect settles state, or the search param is dropped by the router because `openInCutter` doesn't pass `from: "/recordings"`. Fix: use a typed `navigate({ to: "/", search: { recording: r.id } })` (drop the `as never` cast so TS validates the schema), and stop stripping the search param in the finally block — instead clear the ref guard when the effect returns, so a repeat Cut on the same id still re-loads.
+- **Watch** calls `previewMut.mutate(r)` which fetches the whole signed URL blob, then runs `remuxTsToMp4` in ffmpeg.wasm. For a 5–10 min chunk this is a long silent hang with no visible progress — the dialog only opens after remux completes because `setPreview({ url: "", title, remuxing: true })` renders `remuxing` but the mutation never updates the dialog if ffmpeg throws or the browser is slow to load ffmpeg-core. Likely fixes: open the dialog *before* awaiting fetch/remux (show the spinner immediately on click), surface ffmpeg progress via `onProgress`, and handle the "audio-only / no video" ffmpeg failure path by falling back to a raw `<video>` element with the signed URL (Safari can play TS natively; Chrome will show an unplayable-media error which is better than an infinite spinner).
+- **Download** — likely fine, but verify the anchor click actually triggers a download (needs `document.body.appendChild(a)` in some browsers, and `a.target = "_blank"` for cross-origin signed URLs).
+- **Delete / Transcript / Upload / Refresh** — verify in repro; only fix if broken.
 
-## Cleanup
+## Repro & verification
 
-The 6 stuck `uploading` rows are dead — the buffers they refer to were never uploaded. Mark them failed so they stop cluttering the list:
+- Drive the preview with Playwright (headless Chromium) logged in via the injected Supabase session, navigate to `/recordings`, click each button in turn, and screenshot the result + console + network. Confirm:
+  - Cut → URL becomes `/`, cutter shows the recording title and video loads.
+  - Watch → preview dialog opens immediately, shows a spinner, then plays the remuxed MP4 (or a clear error toast).
+  - Download → a `.ts` file lands in the download list.
+  - Delete → row disappears after confirm.
+  - Transcript → editor dialog opens with the saved cues.
+  - Upload / Refresh → header controls behave as expected.
 
-```sql
-UPDATE public.recordings
-   SET status = 'failed',
-       error  = 'worker OOM before upload'
- WHERE status = 'uploading'
-   AND created_at < now() - interval '10 minutes';
-```
+## Out of scope
 
-## Verification
-
-After the resize, during the next active window you should see in `fly logs`:
-
-- `chunk 0 recording…`
-- `chunk 0 uploaded (NN.N MB)`
-- `chunk 1 recording…`
-
-and in the DB, rows with `status = 'ready'`, non-zero `size_bytes`, `ended_at` set, and `chunk_index` incrementing 0,1,2,3….
-
-## Not doing (unless the resize doesn't hold)
-
-- Streaming uploads instead of buffering — bigger refactor, only worth it if 1–2 GB still isn't enough.
-- Shrinking `CHUNK_MS` to 2 min — masks the real issue.
+- No backend/schema changes.
+- No changes to the recorder, worker, or ffmpeg-core packaging.
+- No visual redesign — only wire-up fixes on the existing buttons.
