@@ -27,6 +27,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -436,6 +437,12 @@ function Dashboard() {
     setCues((prev) => prev.map((c) => (c.index === idx ? { ...c, ...patch } : c)));
   const resetCuePos = (idx: number) =>
     setCues((prev) => prev.map((c) => (c.index === idx ? { ...c, xPct: undefined, yPct: undefined } : c)));
+  const updateCueText = (idx: number, text: string) =>
+    setCues((prev) => {
+      const next = prev.map((c) => (c.index === idx ? { ...c, text } : c));
+      setSrtText(cuesToSrt(next));
+      return next;
+    });
 
   const logRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -1264,7 +1271,16 @@ function Dashboard() {
                                 </Button>
                               </div>
                             </div>
-                            <p className="text-xs leading-snug pl-6">{c.text}</p>
+                            <Textarea
+                              value={c.text}
+                              onChange={(e) => updateCueText(c.index, e.target.value)}
+                              rows={Math.min(6, Math.max(2, c.text.split(/\n/).length))}
+                              className="text-xs leading-snug ml-6 font-mono resize-y min-h-[44px]"
+                              placeholder="Subtitle text (use new lines to stack phrases)"
+                            />
+                            <p className="text-[10px] text-muted-foreground pl-6 mt-1">
+                              Edited text is used automatically when you cut or burn subtitles.
+                            </p>
                             {isSelected && (
                               <div className="mt-2 pl-6 space-y-2 rounded-md border bg-muted/20 p-2">
                                 <div className="flex items-center justify-between">
