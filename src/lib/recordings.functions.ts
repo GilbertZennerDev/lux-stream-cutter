@@ -29,6 +29,8 @@ const MarkReadyInput = z.object({
 const MarkFailedInput = z.object({
   id: z.string().uuid(),
   error: z.string().max(500),
+  audioStatus: z.string().max(40).nullable().optional(),
+  audioDetails: z.record(z.any()).nullable().optional(),
 });
 
 const IdInput = z.object({ id: z.string().uuid() });
@@ -106,7 +108,12 @@ export const markRecordingFailed = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await context.supabase
       .from("recordings")
-      .update({ status: "failed", error: data.error })
+      .update({
+        status: "failed",
+        error: data.error,
+        audio_status: data.audioStatus ?? "failed",
+        audio_details: (data.audioDetails ?? null) as Json | null,
+      })
       .eq("id", data.id)
       .eq("user_id", context.userId);
     return { ok: true };

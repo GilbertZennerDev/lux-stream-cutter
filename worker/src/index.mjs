@@ -46,7 +46,14 @@ async function uploadChunk({ buffer, startedAt, endedAt, sessionDate, chunkIndex
     log(`chunk ${chunkIndex} uploaded (${(buffer.length / 1024 / 1024).toFixed(1)} MB) audio=${audio?.status ?? "unknown"}`);
   } catch (err) {
     log(`upload failed for chunk ${chunkIndex}: ${err.message}`);
-    try { await markFailed({ id: created.id, error: err.message.slice(0, 500) }); } catch {}
+    try {
+      await markFailed({
+        id: created.id,
+        error: err.message.slice(0, 500),
+        audioStatus: audio?.status ?? "failed",
+        audioDetails: audio?.details ?? null,
+      });
+    } catch {}
   }
 }
 
