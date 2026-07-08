@@ -54,10 +54,30 @@ export const createRecording = createServerFn({ method: "POST" })
     const userId = context.userId;
     const ext = data.fileExt ?? "ts";
     const path = `${userId}/${data.sessionDate}/${data.startedAt.replace(/[:.]/g, "-")}_${data.chunkIndex}.${ext}`;
+
+    // Resolve the caller's group. RLS on `recordings` requires group_id NOT NULL.
+    const { data: membership, error: mErr } = await context.supabase
+      .from("group_members")
+      .select("group_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (mErr) throw new Error(`Could not read group membership: ${mErr.message}`);
+
+    let groupId: string | null = membership?.group_id ?? null;
+    if (!groupId) {
+      // Super-admins without an explicit membership fall back to WORKER_GROUP_ID.
+      const fallback = process.env.WORKER_GROUP_ID ?? null;
+      if (fallback) groupId = fallback;
+    }
+    if (!groupId) {
+      throw new Error("You are not assigned to a group yet. Ask an administrator to add you.");
+    }
+
     const { data: row, error } = await context.supabase
       .from("recordings")
       .insert({
         user_id: userId,
+        group_id: groupId,
         session_date: data.sessionDate,
         chunk_index: data.chunkIndex,
         started_at: data.startedAt,
@@ -82,6 +102,7 @@ export const createRecording = createServerFn({ method: "POST" })
       token: signed.token,
     };
   });
+
 
 export const markRecordingReady = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
