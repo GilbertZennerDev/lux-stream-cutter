@@ -498,12 +498,17 @@ function Dashboard() {
     const checkCancel = () => {
       if (cancelledRef.current) throw new Error("Cancelled");
     };
+    let activeStage: Stage = "idle";
+    const moveToStage = (next: Stage) => {
+      activeStage = next;
+      setStage(next);
+    };
     try {
       let workingVideo: Blob = sourceForCut;
 
       // Stage 1: Cut (skipped in subs-only mode)
       if (mode !== "subs-only") {
-        setStage("cutting");
+        moveToStage("cutting");
         if (!durationInfo.ok) throw new Error(durationInfo.msg);
         const cut = await cutAndConcat(sourceForCut, durationInfo.parsed, setProgress, { lowPerf, maxHeight });
         checkCancel();
@@ -521,7 +526,7 @@ function Dashboard() {
       }
 
       // Stage 2: Audio
-      setStage("extracting");
+      moveToStage("extracting");
       setProgress(0);
       let audioBytes: Uint8Array;
       try {
@@ -531,7 +536,7 @@ function Dashboard() {
         if (message.includes("No usable audio track") || isFfmpegFilesystemError(message)) {
           appendLog(`[AUDIO] ${friendlyPipelineError(message, "extracting")}`);
           toast.message("Clip ready — audio/subtitle steps skipped");
-          setStage("done");
+          moveToStage("done");
           return;
         }
         throw err;
@@ -552,7 +557,7 @@ function Dashboard() {
 
 
       // Stage 3: LuxASR
-      setStage("asr");
+      moveToStage("asr");
       setProgress(0);
       appendLog(`[ASR] Uploading ${(audio.size / 1024).toFixed(0)} KB to LuxASR…`);
       const submitRes = await fetch("/api/asr", {
@@ -611,7 +616,7 @@ function Dashboard() {
 
 
       // Stage 4: SRT
-      setStage("srt");
+      moveToStage("srt");
       const cues = luxasrJsonToCues(asrJson.result);
       if (cues.length === 0) throw new Error("LuxASR returned no segments");
       let workingCues = cues;
@@ -629,7 +634,7 @@ function Dashboard() {
       }
 
       // Stage 5: Shorten
-      setStage("shortening");
+      moveToStage("shortening");
       workingCues = shortenCues(cues, { maxSentences, maxChars });
       const srt = cuesToSrt(workingCues);
       setSrtText(srt);
@@ -637,7 +642,7 @@ function Dashboard() {
 
       // Stage 6: Burn-in
       if (burnIn) {
-        setStage("burning");
+        moveToStage("burning");
         setProgress(0);
         const dims = await getVideoDimensions(workingVideo);
         const ass = cuesToAss(workingCues, {
@@ -650,11 +655,11 @@ function Dashboard() {
         setProgress(1);
       }
 
-      setStage("done");
+      moveToStage("done");
       toast.success("Pipeline complete");
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : String(err);
-      const message = friendlyPipelineError(rawMessage, stage);
+      const message = friendlyPipelineError(rawMessage, activeStage);
       if (cancelledRef.current || message === "Cancelled" || (err as Error)?.name === "AbortError") {
         appendLog("[CANCEL] Pipeline stopped");
         setStage("idle");
@@ -681,16 +686,21 @@ function Dashboard() {
     const ac = new AbortController();
     abortRef.current = ac;
     const checkCancel = () => { if (cancelledRef.current) throw new Error("Cancelled"); };
+    let activeStage: Stage = "idle";
+    const moveToStage = (next: Stage) => {
+      activeStage = next;
+      setStage(next);
+    };
 
     // Fast path: reuse the stored full transcript, just re-shorten.
     if (rawCues.length > 0) {
       try {
-        setStage("shortening");
+        moveToStage("shortening");
         const shortened = shortenCues(rawCues, { maxSentences, maxChars });
         setCues(shortened);
         setSrtText(cuesToSrt(shortened));
         appendLog(`[CUES] Reused stored transcript → ${shortened.length} blocks`);
-        setStage("done");
+        moveToStage("done");
         toast.success(`${shortened.length} subtitle blocks (from saved transcript)`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -705,7 +715,7 @@ function Dashboard() {
     }
 
     try {
-      setStage("extracting");
+      moveToStage("extracting");
       setProgress(0);
       const audioSource: Blob =
         isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file;
@@ -715,7 +725,7 @@ function Dashboard() {
       setAudioBlob(audio);
       setProgress(1);
 
-      setStage("asr");
+      moveToStage("asr");
       setProgress(0);
       appendLog(`[ASR] Uploading ${(audio.size / 1024).toFixed(0)} KB to LuxASR…`);
       const submitRes = await fetch("/api/asr", {
@@ -758,11 +768,11 @@ function Dashboard() {
         }
       }
 
-      setStage("srt");
+      moveToStage("srt");
       const raw = luxasrJsonToCues(asrResult);
       if (raw.length === 0) throw new Error("LuxASR returned no segments");
       setRawCues(raw);
-      setStage("shortening");
+      moveToStage("shortening");
       const shortened = shortenCues(raw, { maxSentences, maxChars });
       setCues(shortened);
       setSrtText(cuesToSrt(shortened));
@@ -778,7 +788,7 @@ function Dashboard() {
           appendLog(`[DB] Failed to save transcript: ${(e as Error).message}`);
         }
       }
-      setStage("done");
+      moveToStage("done");
       toast.success(`${shortened.length} subtitle blocks — click a block to set start/end`);
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : String(err);
@@ -837,6 +847,11 @@ function Dashboard() {
     const ac = new AbortController();
     abortRef.current = ac;
     const checkCancel = () => { if (cancelledRef.current) throw new Error("Cancelled"); };
+    let activeStage: Stage = "idle";
+    const moveToStage = (next: Stage) => {
+      activeStage = next;
+      setStage(next);
+    };
     try {
       const parsedSegments = picked.map((c) => ({ start: c.start, end: c.end }));
 
@@ -858,7 +873,7 @@ function Dashboard() {
       const srt = cuesToSrt(remapped);
       setSrtText(srt);
 
-      setStage("cutting");
+      moveToStage("cutting");
       setProgress(0);
       appendLog(`[CUT] ${picked.length} selected blocks → ${formatSeconds(offset)}`);
       const cut = await cutAndConcat(sourceForCut, parsedSegments, setProgress, { lowPerf, maxHeight });
@@ -867,7 +882,7 @@ function Dashboard() {
       setClipBlob(clip);
       setProgress(1);
 
-      setStage("burning");
+      moveToStage("burning");
       setProgress(0);
       const dims = await getVideoDimensions(clip);
       const ass = cuesToAss(remapped, {
@@ -879,11 +894,11 @@ function Dashboard() {
       setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
       setProgress(1);
 
-      setStage("done");
+      moveToStage("done");
       toast.success(`Cut ${picked.length} blocks with subtitles`);
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : String(err);
-      const message = friendlyPipelineError(rawMessage, stage);
+      const message = friendlyPipelineError(rawMessage, activeStage);
       if (cancelledRef.current || message === "Cancelled" || (err as Error)?.name === "AbortError") {
         appendLog("[CANCEL] Stopped");
         setStage("idle");
