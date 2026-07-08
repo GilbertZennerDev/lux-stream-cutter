@@ -50,8 +50,30 @@ export const Route = createFileRoute("/api/public/hooks/cleanup-recordings")({
                 (rows ?? []).map((r) => r.id),
               );
           }
+          // Auto-fail rows stuck in "uploading" past STUCK_UPLOAD_MINUTES: the
+          // worker create hook succeeded but ready/failed never arrived (upload
+          // PUT hung or worker cycled). Prevents orphan rows piling up.
+          const stuckCutoff = new Date(
+            Date.now() - STUCK_UPLOAD_MINUTES * 60_000,
+          ).toISOString();
+          const { data: stuck, error: stuckErr } = await supabaseAdmin
+            .from("recordings")
+            .update({
+              status: "failed",
+              error: `Upload never completed within ${STUCK_UPLOAD_MINUTES} min (auto-failed by janitor).`,
+            })
+            .eq("status", "uploading")
+            .lt("created_at", stuckCutoff)
+            .select("id");
+          if (stuckErr) throw new Error(stuckErr.message);
+
           return new Response(
-            JSON.stringify({ ok: true, deleted: paths.length, cutoff }),
+            JSON.stringify({
+              ok: true,
+              deleted: paths.length,
+              stuckFailed: stuck?.length ?? 0,
+              cutoff,
+            }),
             { headers: { "Content-Type": "application/json", ...CORS } },
           );
         } catch (err) {
