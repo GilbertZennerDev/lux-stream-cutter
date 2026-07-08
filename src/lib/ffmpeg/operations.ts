@@ -275,7 +275,10 @@ export async function extractAudioMp3(
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       throw new Error(
-        detail.includes("Stream map") || detail.includes("matches no streams")
+        detail.includes("Stream map") ||
+          detail.includes("matches no streams") ||
+          detail.includes("did not create an output file") ||
+          /ErrnoError:\s*FS error|FS error/i.test(detail)
           ? "No usable audio track found in this clip"
           : `Audio extraction failed${detail ? `: ${detail}` : ""}`,
       );
