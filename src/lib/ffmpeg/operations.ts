@@ -55,6 +55,8 @@ function reencodeCutArgs(
     "-ss", formatSeconds(startSec),
     "-i", inputName,
     "-t", duration,
+    "-map", "0:v:0",
+    "-map", "0:a?",
     ...encodeArgs(perf),
     "-c:a", "aac", "-b:a", perf.lowPerf ? "96k" : "128k",
     ...threadArgs(perf),
@@ -221,6 +223,8 @@ export async function cutAndConcat(
         "-f", "concat",
         "-safe", "0",
         "-i", listName,
+        "-map", "0:v:0",
+        "-map", "0:a?",
         ...encodeArgs(perf),
         "-c:a", "aac", "-b:a", perf.lowPerf ? "96k" : "128k",
         ...threadArgs(perf),
@@ -250,22 +254,35 @@ export async function extractAudioMp3(
 ): Promise<Uint8Array> {
   const ffmpeg = await getFFmpeg();
   const off = onP ? onProgress(ffmpeg, onP) : () => {};
-  const inputName = "clip.mp4";
-  const outputName = "clip.mp3";
+  const token = tempToken();
+  const inputName = `audio_input_${token}.mp4`;
+  const outputName = `audio_${token}.mp3`;
   await ffmpeg.writeFile(inputName, await fetchFile(file));
   try {
-    await ffmpeg.exec([
-      "-i", inputName,
-      "-vn",
-      "-ar", "16000", "-ac", "1",
-      // On weak hardware a slightly lower quality MP3 still transcribes fine
-      // and is 20-30% faster to encode.
-      "-c:a", "libmp3lame", "-q:a", perf.lowPerf ? "7" : "4",
-      ...threadArgs(perf),
-      "-y", outputName,
-    ]);
-    const data = await ffmpeg.readFile(outputName);
-    return data as Uint8Array;
+    try {
+      await ffmpeg.exec([
+        "-i", inputName,
+        "-map", "0:a:0",
+        "-vn",
+        "-ar", "16000", "-ac", "1",
+        // On weak hardware a slightly lower quality MP3 still transcribes fine
+        // and is 20-30% faster to encode.
+        "-c:a", "libmp3lame", "-q:a", perf.lowPerf ? "7" : "4",
+        ...threadArgs(perf),
+        "-y", outputName,
+      ]);
+      return await readOutputFile(ffmpeg, outputName, "Audio extraction");
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        detail.includes("Stream map") ||
+          detail.includes("matches no streams") ||
+          detail.includes("did not create an output file") ||
+          /ErrnoError:\s*FS error|FS error/i.test(detail)
+          ? "No usable audio track found in this clip"
+          : `Audio extraction failed${detail ? `: ${detail}` : ""}`,
+      );
+    }
   } finally {
     off();
     try { await ffmpeg.deleteFile(inputName); } catch {}
@@ -372,9 +389,10 @@ export async function burnSubtitles(
 ): Promise<Uint8Array> {
   const ffmpeg = await getFFmpeg();
   const off = onP ? onProgress(ffmpeg, onP) : () => {};
-  const inputName = "clip.mp4";
-  const subsName = "subs.ass";
-  const outputName = "clip_subbed.mp4";
+  const token = tempToken();
+  const inputName = `burn_input_${token}.mp4`;
+  const subsName = `subs_${token}.ass`;
+  const outputName = `burned_${token}.mp4`;
   await ensureFont(ffmpeg);
   await ffmpeg.writeFile(inputName, await fetchFile(video));
   await ffmpeg.writeFile(subsName, new TextEncoder().encode(assText));
@@ -385,15 +403,16 @@ export async function burnSubtitles(
   try {
     await ffmpeg.exec([
       "-i", inputName,
+      "-map", "0:v:0",
+      "-map", "0:a?",
       "-vf", vf,
       ...encodeArgs(perf),
-      "-c:a", "copy",
+      "-c:a", "aac", "-b:a", perf.lowPerf ? "96k" : "128k",
       ...threadArgs(perf),
       "-movflags", "+faststart",
       "-y", outputName,
     ]);
-    const data = await ffmpeg.readFile(outputName);
-    return data as Uint8Array;
+    return await readOutputFile(ffmpeg, outputName, "Subtitle burn-in");
   } finally {
     off();
     try { await ffmpeg.deleteFile(inputName); } catch {}
