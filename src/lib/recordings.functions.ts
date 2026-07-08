@@ -132,13 +132,13 @@ export const listRecordings = createServerFn({ method: "GET" })
     const { data, error } = await context.supabase
       .from("recordings")
       .select("*")
-      .eq("user_id", context.userId)
       .order("session_date", { ascending: false })
       .order("chunk_index", { ascending: true })
       .limit(500);
     if (error) throw new Error(error.message);
     return (data ?? []) as RecordingRow[];
   });
+
 
 export const getRecordingDownloadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
