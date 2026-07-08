@@ -17,7 +17,7 @@ const POLL_MS = 60_000; // schedule check cadence
 
 const log = (m) => console.log(`[worker] ${new Date().toISOString()} ${m}`);
 
-async function uploadChunk({ buffer, startedAt, endedAt, sessionDate, chunkIndex, sourceUrl }) {
+async function uploadChunk({ buffer, startedAt, endedAt, sessionDate, chunkIndex, sourceUrl, audio }) {
   if (buffer.length === 0) {
     log(`chunk ${chunkIndex} empty, skip`);
     return;
@@ -40,15 +40,17 @@ async function uploadChunk({ buffer, startedAt, endedAt, sessionDate, chunkIndex
       id: created.id,
       endedAt: endedAt.toISOString(),
       sizeBytes: buffer.length,
+      audioStatus: audio?.status ?? null,
+      audioDetails: audio?.details ?? null,
     });
-    log(`chunk ${chunkIndex} uploaded (${(buffer.length / 1024 / 1024).toFixed(1)} MB)`);
+    log(`chunk ${chunkIndex} uploaded (${(buffer.length / 1024 / 1024).toFixed(1)} MB) audio=${audio?.status ?? "unknown"}`);
   } catch (err) {
     log(`upload failed for chunk ${chunkIndex}: ${err.message}`);
     try { await markFailed({ id: created.id, error: err.message.slice(0, 500) }); } catch {}
   }
 }
 
-async function markChunkFailed({ error, startedAt, endedAt, sessionDate, chunkIndex, sourceUrl }) {
+async function markChunkFailed({ error, startedAt, endedAt, sessionDate, chunkIndex, sourceUrl, audio }) {
   let created;
   try {
     created = await createRecording({
@@ -65,6 +67,8 @@ async function markChunkFailed({ error, startedAt, endedAt, sessionDate, chunkIn
     await markFailed({
       id: created.id,
       error: `${error}; endedAt=${endedAt.toISOString()}`.slice(0, 500),
+      audioStatus: audio?.status ?? "failed",
+      audioDetails: audio?.details ?? null,
     });
     log(`chunk ${chunkIndex} marked failed: ${error}`);
   } catch (err) {
@@ -112,6 +116,10 @@ async function runSession(session) {
       (async () => {
         try {
           const buffer = await prev.stop();
+          const audioInfo = prev.getAudioVerification?.();
+          const audio = audioInfo
+            ? { status: audioInfo.outputHasAudio ? "verified" : "missing", details: audioInfo }
+            : { status: "unknown", details: null };
           log(`chunk ${prevIdx} captured ${prev.getSegmentCount()} video / ${prev.getAudioSegmentCount?.() ?? 0} audio segments`);
           await uploadChunk({
             buffer,
@@ -120,6 +128,7 @@ async function runSession(session) {
             sessionDate: session.sessionDate,
             chunkIndex: prevIdx,
             sourceUrl: PLAYLIST_URL,
+            audio,
           });
         } catch (err) {
           log(`finalize chunk ${prevIdx} err: ${err.message}`);
@@ -130,6 +139,7 @@ async function runSession(session) {
             sessionDate: session.sessionDate,
             chunkIndex: prevIdx,
             sourceUrl: PLAYLIST_URL,
+            audio: { status: "failed", details: { error: err.message } },
           });
         }
       })();
@@ -140,6 +150,10 @@ async function runSession(session) {
   if (recorder) {
     try {
       const buffer = await recorder.stop();
+      const audioInfo = recorder.getAudioVerification?.();
+      const audio = audioInfo
+        ? { status: audioInfo.outputHasAudio ? "verified" : "missing", details: audioInfo }
+        : { status: "unknown", details: null };
       log(`chunk ${chunkIndex} captured ${recorder.getSegmentCount()} video / ${recorder.getAudioSegmentCount?.() ?? 0} audio segments`);
       await uploadChunk({
         buffer,
@@ -148,6 +162,7 @@ async function runSession(session) {
         sessionDate: session.sessionDate,
         chunkIndex,
         sourceUrl: PLAYLIST_URL,
+        audio,
       });
     } catch (err) {
       log(`final chunk err: ${err.message}`);
@@ -158,6 +173,7 @@ async function runSession(session) {
         sessionDate: session.sessionDate,
         chunkIndex,
         sourceUrl: PLAYLIST_URL,
+        audio: { status: "failed", details: { error: err.message } },
       });
     }
   }

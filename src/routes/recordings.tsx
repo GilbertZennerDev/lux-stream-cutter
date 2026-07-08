@@ -292,6 +292,7 @@ function RecordingsPage() {
                       </div>
                       <div className="text-xs font-mono text-muted-foreground truncate">
                         {formatTimeRange(r.started_at, r.ended_at)} · {formatBytes(r.size_bytes)}
+                        {formatAudioDetails(r) && <span> · {formatAudioDetails(r)}</span>}
                         {r.error && <span className="text-destructive"> · {r.error}</span>}
                       </div>
                     </div>
@@ -302,6 +303,7 @@ function RecordingsPage() {
                       </Badge>
                     )}
                     <StatusBadge status={r.status} />
+                    <AudioBadge recording={r} />
                     <div className="flex gap-1">
                       <Button
                         size="sm"
@@ -419,6 +421,25 @@ function StatusBadge({ status }: { status: string }) {
   };
   const m = map[status] ?? { label: status, variant: "outline" as const };
   return <Badge variant={m.variant}>{m.label}</Badge>;
+}
+
+function AudioBadge({ recording }: { recording: RecordingRow }) {
+  const status = recording.audio_status;
+  if (!status) return <Badge variant="outline">Audio unknown</Badge>;
+  if (status === "verified") return <Badge variant="default">Audio verified</Badge>;
+  if (status === "embedded") return <Badge variant="secondary">Audio embedded</Badge>;
+  if (status === "missing" || status === "failed") return <Badge variant="destructive">No audio</Badge>;
+  return <Badge variant="outline">Audio {status}</Badge>;
+}
+
+function formatAudioDetails(recording: RecordingRow): string | null {
+  const details = recording.audio_details;
+  if (!details) return null;
+  const audioSegments = typeof details.capturedSegments === "number" ? details.capturedSegments : null;
+  const streams = typeof details.streams === "string" ? details.streams : null;
+  if (audioSegments !== null && streams) return `${audioSegments} audio segments · ${streams}`;
+  if (streams) return streams;
+  return null;
 }
 
 function formatBytes(n: number): string {

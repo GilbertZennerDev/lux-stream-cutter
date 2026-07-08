@@ -21,6 +21,8 @@ const MarkReadyInput = z.object({
   id: z.string().uuid(),
   endedAt: z.string(),
   sizeBytes: z.number().int().nonnegative(),
+  audioStatus: z.string().max(40).nullable().optional(),
+  audioDetails: z.record(z.unknown()).nullable().optional(),
 });
 
 const MarkFailedInput = z.object({
@@ -88,6 +90,8 @@ export const markRecordingReady = createServerFn({ method: "POST" })
         status: "ready",
         ended_at: data.endedAt,
         size_bytes: data.sizeBytes,
+        audio_status: data.audioStatus ?? null,
+        audio_details: data.audioDetails ?? null,
       })
       .eq("id", data.id)
       .eq("user_id", context.userId);
@@ -124,6 +128,8 @@ export interface RecordingRow {
   transcript_srt: string | null;
   transcribed_at: string | null;
   full_copy: boolean;
+  audio_status: string | null;
+  audio_details: Record<string, unknown> | null;
 }
 
 export const listRecordings = createServerFn({ method: "GET" })
