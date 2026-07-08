@@ -436,6 +436,12 @@ function Dashboard() {
     setCues((prev) => prev.map((c) => (c.index === idx ? { ...c, ...patch } : c)));
   const resetCuePos = (idx: number) =>
     setCues((prev) => prev.map((c) => (c.index === idx ? { ...c, xPct: undefined, yPct: undefined } : c)));
+  const updateCueText = (idx: number, text: string) =>
+    setCues((prev) => {
+      const next = prev.map((c) => (c.index === idx ? { ...c, text } : c));
+      setSrtText(cuesToSrt(next));
+      return next;
+    });
 
   const logRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
