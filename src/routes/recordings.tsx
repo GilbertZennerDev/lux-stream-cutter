@@ -378,8 +378,13 @@ function RecordingsPage() {
           {preview?.remuxing && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Remuxing .ts to MP4 for preview…
+              Preparing preview… (fetching + remuxing .ts to MP4)
             </div>
+          )}
+          {preview?.error && (
+            <p className="text-xs text-destructive px-1">
+              Remux failed: {preview.error}. Trying raw stream — your browser may not support MPEG-TS.
+            </p>
           )}
           {preview && preview.url && !preview.remuxing && (
             <video
