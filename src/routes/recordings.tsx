@@ -18,7 +18,7 @@ import {
   type RecordingRow,
 } from "@/lib/recordings.functions";
 import { TranscriptEditor } from "@/components/recordings/TranscriptEditor";
-import { RecordingThumbnail } from "@/components/recordings/RecordingThumbnail";
+import { RecordingThumbnail, setThumbnail, generateThumbnailFromBlob } from "@/components/recordings/RecordingThumbnail";
 
 
 
@@ -150,6 +150,15 @@ function RecordingsPage() {
               sizeBytes: file.size,
             },
           });
+          // Generate the thumbnail from the local file — no re-download.
+          // Skip .ts (browsers can't decode MPEG-TS in <video>).
+          if (!/\.(ts)$/i.test(file.name)) {
+            generateThumbnailFromBlob(file)
+              .then((url) => {
+                if (url) setThumbnail(created.id, url);
+              })
+              .catch(() => {});
+          }
         } catch (err) {
           await markRecordingFailed({
             data: { id: created.id, error: (err as Error).message.slice(0, 500) },
