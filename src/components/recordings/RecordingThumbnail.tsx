@@ -117,16 +117,18 @@ export function RecordingThumbnail({ recordingId, storagePath, ready }: Props) {
   const cancelled = useRef(false);
 
   useEffect(() => {
-    cancelled.current = false;
-    if (!ready) return;
-    if (cache.has(recordingId)) {
-      setSrc(cache.get(recordingId)!);
-      return;
-    }
+    return () => {
+      cancelled.current = true;
+    };
+  }, []);
+
+  const handleClick = () => {
+    if (!ready || loading || src) return;
     if (/\.ts$/i.test(storagePath)) {
       setFailed(true);
       return;
     }
+    setFailed(false);
     setLoading(true);
     let promise = inflight.get(recordingId);
     if (!promise) {
@@ -143,20 +145,36 @@ export function RecordingThumbnail({ recordingId, storagePath, ready }: Props) {
       if (url) setSrc(url);
       else setFailed(true);
     });
-    return () => {
-      cancelled.current = true;
-    };
-  }, [recordingId, storagePath, ready]);
+  };
+
+  const disabled = !ready || loading || !!src;
+  const title = !ready
+    ? "Not ready"
+    : src
+      ? "First frame"
+      : loading
+        ? "Generating…"
+        : failed
+          ? /\.ts$/i.test(storagePath)
+            ? "Preview not available for .ts files"
+            : "Could not generate thumbnail — click to retry"
+          : "Click to generate thumbnail";
 
   return (
-    <div className="mt-1 h-16 w-28 shrink-0 overflow-hidden rounded border bg-muted grid place-items-center">
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={disabled}
+      title={title}
+      className="mt-1 h-16 w-28 shrink-0 overflow-hidden rounded border bg-muted grid place-items-center hover:bg-muted/70 disabled:cursor-default"
+    >
       {src ? (
         <img src={src} alt="First frame" className="h-full w-full object-cover" />
       ) : loading ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
       ) : (
-        <Film className="h-4 w-4 text-muted-foreground" aria-label={failed ? "No preview available" : "Waiting"} />
+        <Film className="h-4 w-4 text-muted-foreground" />
       )}
-    </div>
+    </button>
   );
 }
