@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Film, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { getRecordingDownloadUrl } from "@/lib/recordings.functions";
 
 // Module-level cache so thumbnails persist across renders/refetches.
@@ -98,79 +99,32 @@ function release() {
 
 async function generateThumb(recordingId: string, storagePath: string): Promise<string | null> {
   const isTs = /\.ts$/i.test(storagePath);
-  // Browsers can't render MPEG-TS in a <video>; skip to avoid a costly remux
-  // per row. Preview button still works via the existing ffmpeg remux flow.
-  if (isTs) return null;
+  if (isTs) throw new Error("Preview not available for .ts files");
 
   await acquire();
   try {
     const { url } = await getRecordingDownloadUrl({ data: { id: recordingId } });
-    return await new Promise<string | null>((resolve) => {
-      const video = document.createElement("video");
-      video.crossOrigin = "anonymous";
-      video.preload = "metadata";
-      video.muted = true;
-      video.playsInline = true;
-      video.src = url;
-
-      let settled = false;
-      const cleanup = () => {
-        try {
-          video.removeAttribute("src");
-          video.load();
-        } catch {}
-      };
-      const finish = (v: string | null) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        resolve(v);
-      };
-
-      const capture = () => {
-        try {
-          const w = video.videoWidth;
-          const h = video.videoHeight;
-          if (!w || !h) return finish(null);
-          const scale = Math.min(1, 320 / w);
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.max(1, Math.round(w * scale));
-          canvas.height = Math.max(1, Math.round(h * scale));
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return finish(null);
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob(
-            (blob) => {
-              if (!blob) return finish(null);
-              finish(URL.createObjectURL(blob));
-            },
-            "image/jpeg",
-            0.7,
-          );
-        } catch {
-          finish(null);
-        }
-      };
-
-      video.addEventListener("loadeddata", () => {
-        // Seek slightly in to skip any black leading frame.
-        try {
-          video.currentTime = Math.min(0.5, (video.duration || 1) / 2);
-        } catch {
-          capture();
-        }
-      });
-      video.addEventListener("seeked", capture);
-      video.addEventListener("error", () => finish(null));
-      // Safety timeout — some files just won't decode in-browser.
-      setTimeout(() => finish(null), 15000);
-    });
-  } catch {
-    return null;
+    // Fetch the file so the canvas isn't tainted by cross-origin drawing.
+    // Range request keeps this cheap — most containers have moov near the head.
+    let blob: Blob;
+    try {
+      const res = await fetch(url, { headers: { Range: "bytes=0-4194304" } });
+      if (!res.ok && res.status !== 206) throw new Error(`Fetch ${res.status}`);
+      blob = await res.blob();
+    } catch {
+      // Fallback: full file
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+      blob = await res.blob();
+    }
+    const thumb = await generateThumbnailFromBlob(blob);
+    if (!thumb) throw new Error("Could not decode video for thumbnail");
+    return thumb;
   } finally {
     release();
   }
 }
+
 
 interface Props {
   recordingId: string;
@@ -209,17 +163,25 @@ export function RecordingThumbnail({ recordingId, storagePath, ready }: Props) {
     if (!ready || loading || src) return;
     if (/\.ts$/i.test(storagePath)) {
       setFailed(true);
+      toast.error("Thumbnails not supported for .ts files (browser can't decode MPEG-TS).");
       return;
     }
     setFailed(false);
     setLoading(true);
     let promise = inflight.get(recordingId);
     if (!promise) {
-      promise = generateThumb(recordingId, storagePath).then((url) => {
-        if (url) cache.set(recordingId, url);
-        inflight.delete(recordingId);
-        return url;
-      });
+      promise = generateThumb(recordingId, storagePath)
+        .then((url) => {
+          if (url) cache.set(recordingId, url);
+          inflight.delete(recordingId);
+          return url;
+        })
+        .catch((err: Error) => {
+          console.error("[thumbnail] generation failed", err);
+          toast.error(`Thumbnail failed: ${err.message}`);
+          inflight.delete(recordingId);
+          return null;
+        });
       inflight.set(recordingId, promise);
     }
     promise.then((url) => {
@@ -229,6 +191,7 @@ export function RecordingThumbnail({ recordingId, storagePath, ready }: Props) {
       else setFailed(true);
     });
   };
+
 
   const disabled = !ready || loading || !!src;
   const title = !ready
