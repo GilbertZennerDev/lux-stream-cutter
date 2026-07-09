@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Play, Wand2 } from "lucide-react";
+import { Loader2, Play, Sparkles, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { cutVideo } from "@/lib/ffmpeg/operations";
 import type { SrtCue } from "@/lib/subtitles/luxasrToSrt";
 import { formatSeconds } from "@/lib/subtitles/parseTime";
+import { detectLipSyncOffset } from "@/lib/lipsync/detectOffset";
 
 interface Props {
   open: boolean;
@@ -32,6 +33,8 @@ export function SyncCalibrator({ open, onClose, cues, getSource, offset, setOffs
   const [cueIdx, setCueIdx] = useState<number>(0);
   const [localOffset, setLocalOffset] = useState<number>(offset);
   const [busy, setBusy] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [autoStatus, setAutoStatus] = useState<string>("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -89,6 +92,48 @@ export function SyncCalibrator({ open, onClose, cues, getSource, offset, setOffs
       toast.error(`Preview failed: ${(err as Error).message}`);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const autoDetect = async () => {
+    const src = getSource();
+    if (!src) {
+      toast.error("Source not ready. Wait for the preview to finish preparing.");
+      return;
+    }
+    if (!cue) {
+      toast.error("Pick a cue first.");
+      return;
+    }
+    setAutoBusy(true);
+    setAutoStatus("Preparing clip…");
+    try {
+      // Bake current offset into the analysis clip; the detector then finds the residual.
+      const start = Math.max(0, cue.start - PAD_BEFORE);
+      const end = cue.end + PAD_AFTER;
+      const out = await cutVideo(src, start, end, undefined, {
+        lowPerf: true,
+        audioOffsetSec: localOffset,
+      });
+      const blob = new Blob([out as BlobPart], { type: "video/mp4" });
+      const result = await detectLipSyncOffset(blob, {
+        onProgress: (label, pct) => setAutoStatus(`${label} ${Math.round(pct * 100)}%`),
+      });
+      const next = Number((localOffset + result.offsetSec).toFixed(3));
+      setLocalOffset(next);
+      // Also show a preview at the new offset for a manual sanity check.
+      const url = URL.createObjectURL(blob);
+      setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return url; });
+      const conf = Math.round(result.confidence * 100);
+      const cov = Math.round(result.faceCoverage * 100);
+      toast.success(
+        `Detected residual ${result.offsetSec >= 0 ? "+" : ""}${result.offsetSec.toFixed(3)}s → offset ${next.toFixed(3)}s (confidence ${conf}%, face ${cov}%)`,
+      );
+    } catch (err) {
+      toast.error(`Auto-detect failed: ${(err as Error).message}`);
+    } finally {
+      setAutoBusy(false);
+      setAutoStatus("");
     }
   };
 
@@ -171,8 +216,8 @@ export function SyncCalibrator({ open, onClose, cues, getSource, offset, setOffs
             </p>
           </div>
 
-          <div>
-            <Button type="button" size="sm" onClick={generate} disabled={busy || !cue}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" size="sm" onClick={generate} disabled={busy || autoBusy || !cue}>
               {busy ? (
                 <Loader2 className="h-3 w-3 mr-2 animate-spin" />
               ) : (
@@ -180,7 +225,29 @@ export function SyncCalibrator({ open, onClose, cues, getSource, offset, setOffs
               )}
               Generate preview with offset {localOffset.toFixed(3)}s
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={autoDetect}
+              disabled={busy || autoBusy || !cue}
+              title="Analyse a short clip and estimate lip-sync automatically"
+            >
+              {autoBusy ? (
+                <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3 mr-2" />
+              )}
+              Auto-detect sync
+            </Button>
+            {autoStatus && (
+              <span className="text-xs text-muted-foreground">{autoStatus}</span>
+            )}
           </div>
+          <p className="text-xs text-muted-foreground">
+            Auto-detect needs the speaker's face visible in the chosen cue. It analyses
+            mouth movement against the audio envelope and adjusts the offset.
+          </p>
 
           {previewUrl && (
             <div className="rounded-md border overflow-hidden bg-black">
@@ -202,7 +269,7 @@ export function SyncCalibrator({ open, onClose, cues, getSource, offset, setOffs
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={apply} disabled={busy}>
+          <Button onClick={apply} disabled={busy || autoBusy}>
             Apply offset ({localOffset.toFixed(3)}s)
           </Button>
         </DialogFooter>
