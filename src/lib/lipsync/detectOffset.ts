@@ -94,7 +94,7 @@ async function getLandmarkerWithTimeout(
       // eslint-disable-next-line no-console
       console.warn("[lipsync] GPU delegate unavailable, falling back to CPU", err);
       return {
-        landmarker: await withTimeout(createLandmarker("CPU"), 30_000, "CPU face model timed out"),
+        landmarker: await withTimeout(getLandmarker("CPU"), 30_000, "CPU face model timed out"),
         used: "CPU",
       };
     }
@@ -352,7 +352,14 @@ async function sampleMouthByPlayback(
       }),
       timeoutMs,
       "Timed out while analysing video frames",
-    );
+    ).catch((err) => {
+      // Return the frames collected so far; downstream face-coverage checks
+      // decide whether this partial sample is useful. This prevents a late
+      // timeout from discarding otherwise valid analysis data and then trying
+      // to reuse the same VIDEO-mode landmarker with reset timestamps.
+      // eslint-disable-next-line no-console
+      console.warn("[lipsync] playback sampling ended early", err);
+    });
   } finally {
     video.pause();
   }
