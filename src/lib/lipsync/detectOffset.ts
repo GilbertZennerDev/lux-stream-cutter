@@ -158,6 +158,25 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
     for (let i = 0; i < frameCount; i++) mouth[i] = NaN;
 
     report("Analysing frames…", 0.05);
+    // Some browsers (Chromium in particular) fire `seeked` before the new
+    // frame is actually painted, so MediaPipe reads the previous frame and
+    // mouth aperture ends up nearly constant → flat cross-correlation → 0
+    // offset. Wait for a real painted frame via requestVideoFrameCallback
+    // when available, and fall back to a double-rAF otherwise.
+    const rvfc = (
+      video as HTMLVideoElement & {
+        requestVideoFrameCallback?: (cb: () => void) => number;
+      }
+    ).requestVideoFrameCallback?.bind(video);
+    const waitForPaintedFrame = () =>
+      new Promise<void>((resolve) => {
+        if (rvfc) {
+          rvfc(() => resolve());
+        } else {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }
+      });
+
     for (let i = 0; i < frameCount; i++) {
       const t = (i + 0.5) / fps;
       if (t >= duration) break;
@@ -168,6 +187,7 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
         video.addEventListener("error", onErr);
         video.currentTime = t;
       });
+      await waitForPaintedFrame();
       try {
         const res = landmarker.detectForVideo(video, Math.round(t * 1000));
         const lm = res.faceLandmarks?.[0];
@@ -184,8 +204,25 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
       throw new Error(`No consistent face detected (${Math.round(faceCoverage * 100)}% of frames). Pick a cue with the presenter clearly on-screen.`);
     }
 
-    report("Decoding audio…", 0.85);
+    // Guard: if the mouth signal barely moves, cross-correlation is
+    // meaningless and would return ~0. Report clearly instead of pretending
+    // the offset is already perfect.
+    let mMin = Infinity, mMax = -Infinity, mMean = 0;
+    for (let i = 0; i < validCount; i++) {
+      const v = mouthFilled[i];
+      if (v < mMin) mMin = v;
+      if (v > mMax) mMax = v;
+      mMean += v;
+    }
+    mMean /= validCount || 1;
+    const mouthRange = mMax - mMin;
+
+    report("Decoding audio…", 0.9);
     const audio = await decodeAudioRms(clip, fps, duration);
+    let aMax = 0;
+    for (let i = 0; i < audio.length; i++) if (audio[i] > aMax) aMax = audio[i];
+
+    report("Correlating…", 0.95);
     const n = Math.min(mouthFilled.length, audio.length);
     const m = zscore(mouthFilled.subarray(0, n));
     const a = zscore(audio.subarray(0, n));
@@ -228,6 +265,29 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
     meanAbs /= corrs.length || 1;
     const confidence = Math.max(0, Math.min(1, (bestCorr - meanAbs) / (Math.abs(bestCorr) + meanAbs + 1e-6)));
 
+    // eslint-disable-next-line no-console
+    console.info("[lipsync]", {
+      duration,
+      frameCount,
+      faceCoverage: Number(faceCoverage.toFixed(2)),
+      mouthRange: Number(mouthRange.toFixed(4)),
+      mouthMean: Number(mMean.toFixed(4)),
+      audioPeak: Number(aMax.toFixed(4)),
+      bestK,
+      bestKF: Number(bestKF.toFixed(3)),
+      bestCorr: Number(bestCorr.toFixed(3)),
+      confidence: Number(confidence.toFixed(3)),
+    });
+
+    if (mouthRange < 0.005) {
+      throw new Error(
+        `Mouth barely moves in this cue (range ${mouthRange.toFixed(3)}). Pick a cue where the presenter is talking clearly.`,
+      );
+    }
+    if (aMax < 0.005) {
+      throw new Error(`Clip audio is nearly silent (peak ${aMax.toFixed(3)}). Pick a cue with clear speech.`);
+    }
+
     report("Done", 1);
     return {
       offsetSec: bestKF / fps,
@@ -235,6 +295,7 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
       faceCoverage,
       frames: frameCount,
     };
+
   } finally {
     URL.revokeObjectURL(url);
   }
