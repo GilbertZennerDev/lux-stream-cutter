@@ -554,7 +554,7 @@ function Dashboard() {
       if (mode !== "subs-only") {
         moveToStage("cutting");
         if (!durationInfo.ok) throw new Error(durationInfo.msg);
-        const cut = await cutAndConcat(sourceForCut, durationInfo.parsed, setProgress, { lowPerf, maxHeight, audioOffsetSec });
+        const cut = await cutAndConcat(sourceForCut, durationInfo.parsed, setProgress, { lowPerf: effLowPerf, maxHeight: effMaxHeight, audioOffsetSec });
         checkCancel();
         const clip = new Blob([cut as BlobPart], { type: "video/mp4" });
         setClipBlob(clip);
@@ -692,7 +692,7 @@ function Dashboard() {
           videoWidth: dims.width,
           videoHeight: dims.height,
         });
-        const subbed = await burnSubtitles(workingVideo, ass, setProgress, { lowPerf, maxHeight });
+        const subbed = await burnSubtitles(workingVideo, ass, setProgress, { lowPerf: effLowPerf, maxHeight: effMaxHeight });
         checkCancel();
         setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
         setProgress(1);
@@ -922,7 +922,7 @@ function Dashboard() {
       moveToStage("cutting");
       setProgress(0);
       appendLog(`[CUT] ${picked.length} selected blocks → ${formatSeconds(offset)}`);
-      const cut = await cutAndConcat(sourceForCut, parsedSegments, setProgress, { lowPerf, maxHeight, audioOffsetSec });
+      const cut = await cutAndConcat(sourceForCut, parsedSegments, setProgress, { lowPerf: effLowPerf, maxHeight: effMaxHeight, audioOffsetSec });
       checkCancel();
       const clip = new Blob([cut as BlobPart], { type: "video/mp4" });
       setClipBlob(clip);
@@ -939,7 +939,7 @@ function Dashboard() {
         videoWidth: dims.width,
         videoHeight: dims.height,
       });
-      const subbed = await burnSubtitles(clip, ass, setProgress, { lowPerf, maxHeight });
+      const subbed = await burnSubtitles(clip, ass, setProgress, { lowPerf: effLowPerf, maxHeight: effMaxHeight });
       checkCancel();
       setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
       setProgress(1);
