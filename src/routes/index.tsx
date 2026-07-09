@@ -178,6 +178,30 @@ function formatDownloadBytes(bytes: number): string {
   return `${mb.toFixed(1)} MB`;
 }
 
+/**
+ * Extract MP3 audio using the WebCodecs/Web Audio fast path when the perf
+ * tier allows it, and fall back to ffmpeg.wasm otherwise. The fast path is
+ * typically 3–10× quicker on modern machines but can't decode every
+ * container (e.g. raw MPEG-TS), hence the graceful fallback.
+ */
+async function extractAudioSmart(
+  source: Blob,
+  onProgress: (n: number) => void,
+  lowPerf: boolean,
+  useFast: boolean,
+  log: (m: string) => void,
+): Promise<Uint8Array> {
+  if (useFast) {
+    try {
+      log("[AUDIO] Fast path (WebCodecs + lamejs)…");
+      return await extractAudioMp3Fast(source, onProgress);
+    } catch (err) {
+      log(`[AUDIO] Fast path failed (${(err as Error).message}); falling back to ffmpeg.wasm`);
+    }
+  }
+  return await extractAudioMp3(source, onProgress, { lowPerf });
+}
+
 async function downloadRecordingFile(
   url: string,
   fileName: string,
@@ -1818,6 +1842,7 @@ function Dashboard() {
         }
         offset={audioOffsetSec}
         setOffset={setAudioOffsetSec}
+        perf={perf}
       />
 
       <footer className="mx-auto max-w-7xl px-6 py-8 text-xs text-muted-foreground">
