@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Play, Wand2 } from "lucide-react";
+import { Loader2, Play, Sparkles, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { cutVideo } from "@/lib/ffmpeg/operations";
 import type { SrtCue } from "@/lib/subtitles/luxasrToSrt";
 import { formatSeconds } from "@/lib/subtitles/parseTime";
+import { detectLipSyncOffset } from "@/lib/lipsync/detectOffset";
 
 interface Props {
   open: boolean;
