@@ -338,6 +338,7 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
       confidence,
       faceCoverage,
       frames: frameCount,
+      delegateUsed,
     };
 
   } finally {
