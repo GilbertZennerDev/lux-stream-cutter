@@ -1624,6 +1624,7 @@ function Dashboard() {
                       />
                     </div>
                   </div>
+                  <PerfSelector state={perfState} />
                   <div className="flex items-center justify-between">
                     <div>
                       <Label htmlFor="burn">Burn subtitles into video</Label>
