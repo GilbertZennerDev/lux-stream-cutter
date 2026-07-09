@@ -401,10 +401,13 @@ export async function burnSubtitles(
     ? `${sf},ass=${subsName}:fontsdir=/fonts`
     : `ass=${subsName}:fontsdir=/fonts`;
   try {
+    // NOTE: Do NOT combine `-map 0:v:0` with `-vf` here. When the video
+    // stream is explicitly mapped, ffmpeg.wasm's simple-filter (`-vf`) path
+    // can be bypassed and the video passes through un-filtered — the output
+    // renders without any burned subtitles. Rely on default stream
+    // selection (best video + best audio) so `-vf` is applied correctly.
     await ffmpeg.exec([
       "-i", inputName,
-      "-map", "0:v:0",
-      "-map", "0:a?",
       "-vf", vf,
       ...encodeArgs(perf),
       "-c:a", "aac", "-b:a", perf.lowPerf ? "96k" : "128k",
@@ -412,6 +415,7 @@ export async function burnSubtitles(
       "-movflags", "+faststart",
       "-y", outputName,
     ]);
+
     return await readOutputFile(ffmpeg, outputName, "Subtitle burn-in");
   } finally {
     off();
