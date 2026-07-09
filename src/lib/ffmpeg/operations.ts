@@ -314,10 +314,14 @@ export async function extractAudioMp3(
 const FONT_URL =
   "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf";
 const FONT_FAMILY = "Noto Sans";
-let fontLoaded = false;
+// Track font install per ffmpeg instance. A cancel/reload creates a new
+// FFmpeg with a fresh virtual filesystem, so a module-level boolean would
+// falsely report the font as loaded and libass would silently render
+// nothing — subtitles disappear from the burned output.
+const fontLoadedFor = new WeakSet<object>();
 
 async function ensureFont(ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>) {
-  if (fontLoaded) return;
+  if (fontLoadedFor.has(ffmpeg)) return;
   try {
     await ffmpeg.createDir("/fonts");
   } catch {
@@ -325,7 +329,7 @@ async function ensureFont(ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>) {
   }
   const bytes = await fetchFile(FONT_URL);
   await ffmpeg.writeFile("/fonts/NotoSans-Regular.ttf", bytes);
-  fontLoaded = true;
+  fontLoadedFor.add(ffmpeg);
 }
 
 export interface SubtitleStyle {
