@@ -1634,7 +1634,9 @@ function Dashboard() {
                     </div>
                   </div>
 
+                  <div>
                     <Label>Output resolution</Label>
+
                     <p className="text-xs text-muted-foreground mb-2">
                       Kleiner = deutlich schneller beim Burn-in. Auch im Low-perf Modus wählbar.
                     </p>
