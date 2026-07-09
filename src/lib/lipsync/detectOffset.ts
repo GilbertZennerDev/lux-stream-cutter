@@ -423,12 +423,17 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
   video.playsInline = true;
   video.preload = "auto";
   video.crossOrigin = "anonymous";
+  // Chromium throttles requestVideoFrameCallback for videos that are
+  // offscreen or fully transparent, which makes rvfc-based sampling stall
+  // indefinitely. Keep the element on-screen, small, and *slightly* opaque
+  // so the compositor considers it visible.
   video.style.position = "fixed";
-  video.style.left = "-9999px";
-  video.style.top = "0";
-  video.style.width = "1px";
-  video.style.height = "1px";
-  video.style.opacity = "0";
+  video.style.right = "0px";
+  video.style.bottom = "0px";
+  video.style.width = "4px";
+  video.style.height = "4px";
+  video.style.opacity = "0.01";
+  video.style.zIndex = "0";
   video.style.pointerEvents = "none";
   try {
     document.body.appendChild(video);
