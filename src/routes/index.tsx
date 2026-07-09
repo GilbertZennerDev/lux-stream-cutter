@@ -410,6 +410,8 @@ function Dashboard() {
   const [burnIn, setBurnIn] = useState(true);
   const [lowPerf, setLowPerf] = useState(false);
   const [maxHeight, setMaxHeight] = useState<0 | 480 | 720 | 1080>(0);
+  const [audioOffsetSec, setAudioOffsetSec] = useState(0);
+
 
   const [stage, setStage] = useState<Stage>("idle");
   const [progress, setProgress] = useState(0);
@@ -539,7 +541,7 @@ function Dashboard() {
       if (mode !== "subs-only") {
         moveToStage("cutting");
         if (!durationInfo.ok) throw new Error(durationInfo.msg);
-        const cut = await cutAndConcat(sourceForCut, durationInfo.parsed, setProgress, { lowPerf, maxHeight });
+        const cut = await cutAndConcat(sourceForCut, durationInfo.parsed, setProgress, { lowPerf, maxHeight, audioOffsetSec });
         checkCancel();
         const clip = new Blob([cut as BlobPart], { type: "video/mp4" });
         setClipBlob(clip);
@@ -907,7 +909,7 @@ function Dashboard() {
       moveToStage("cutting");
       setProgress(0);
       appendLog(`[CUT] ${picked.length} selected blocks → ${formatSeconds(offset)}`);
-      const cut = await cutAndConcat(sourceForCut, parsedSegments, setProgress, { lowPerf, maxHeight });
+      const cut = await cutAndConcat(sourceForCut, parsedSegments, setProgress, { lowPerf, maxHeight, audioOffsetSec });
       checkCancel();
       const clip = new Blob([cut as BlobPart], { type: "video/mp4" });
       setClipBlob(clip);
@@ -1602,7 +1604,39 @@ function Dashboard() {
                     <Switch id="lowperf" checked={lowPerf} onCheckedChange={setLowPerf} />
                   </div>
                   <div>
+                    <Label htmlFor="audio-offset">Audio sync offset (seconds)</Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Shift the audio track relative to video. Positive = audio later, negative = audio earlier. Accepts decimals (e.g. 0.25, -1.5). Applied during cutting; forces audio re-encode.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" size="sm" variant="outline" onClick={() => setAudioOffsetSec((v) => Number((v - 0.1).toFixed(3)))}>
+                        −0.1s
+                      </Button>
+                      <Input
+                        id="audio-offset"
+                        type="number"
+                        step="0.01"
+                        value={audioOffsetSec}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          setAudioOffsetSec(Number.isFinite(n) ? n : 0);
+                        }}
+                        className="w-28 text-center"
+                      />
+                      <Button type="button" size="sm" variant="outline" onClick={() => setAudioOffsetSec((v) => Number((v + 0.1).toFixed(3)))}>
+                        +0.1s
+                      </Button>
+                      {audioOffsetSec !== 0 && (
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setAudioOffsetSec(0)}>
+                          Reset
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
                     <Label>Output resolution</Label>
+
                     <p className="text-xs text-muted-foreground mb-2">
                       Kleiner = deutlich schneller beim Burn-in. Auch im Low-perf Modus wählbar.
                     </p>

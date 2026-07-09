@@ -7,7 +7,25 @@ export interface PerfOptions {
   lowPerf?: boolean;
   /** Max video height when re-encoding (only used if lowPerf or explicitly set). */
   maxHeight?: number;
+  /**
+   * Shift the audio track by this many seconds relative to the video.
+   * Positive = audio plays later (delayed by silence padding).
+   * Negative = audio plays earlier (trims that many seconds off the start).
+   * When non-zero, audio is always re-encoded (no fast copy).
+   */
+  audioOffsetSec?: number;
 }
+
+function audioOffsetFilter(perf: PerfOptions): string | null {
+  const off = perf.audioOffsetSec ?? 0;
+  if (!off || Math.abs(off) < 0.001) return null;
+  if (off > 0) {
+    const ms = Math.round(off * 1000);
+    return `adelay=${ms}|${ms}`;
+  }
+  return `atrim=start=${(-off).toFixed(3)},asetpts=PTS-STARTPTS`;
+}
+
 
 function encodeArgs(perf: PerfOptions): string[] {
   const preset = perf.lowPerf ? "ultrafast" : "veryfast";
@@ -64,10 +82,13 @@ function reencodeCutArgs(
     "-movflags", "+faststart",
     "-y", outputName,
   ];
+  const af = audioOffsetFilter(perf);
+  if (af) args.splice(args.indexOf("-c:a"), 0, "-af", af);
   const sf = scaleFilter(perf);
   if (sf) args.splice(args.indexOf("-c:v"), 0, "-vf", sf);
   return args;
 }
+
 
 function scaleFilter(perf: PerfOptions): string | null {
   const h = perf.maxHeight ?? (perf.lowPerf ? 480 : 0);
@@ -148,7 +169,7 @@ export async function cutVideo(
   const outputName = `cut_${token}.mp4`;
   await ffmpeg.writeFile(inputName, await fetchFile(file));
   const duration = (endSec - startSec).toFixed(3);
-  const mustReencode = !!(perf.lowPerf || perf.maxHeight);
+  const mustReencode = !!(perf.lowPerf || perf.maxHeight || (perf.audioOffsetSec && Math.abs(perf.audioOffsetSec) >= 0.001));
   try {
     if (mustReencode) throw new Error("reencode");
     // Fast copy: no CPU cost, ideal for weak hardware.
