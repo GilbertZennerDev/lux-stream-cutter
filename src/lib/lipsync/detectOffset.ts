@@ -184,12 +184,24 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
     for (let i = 0; i < frameCount; i++) {
       const t = (i + 0.5) / fps;
       if (t >= duration) break;
-      await new Promise<void>((resolve, reject) => {
-        const onSeek = () => { video.removeEventListener("seeked", onSeek); resolve(); };
-        const onErr = () => { video.removeEventListener("error", onErr); reject(new Error("Seek failed")); };
-        video.addEventListener("seeked", onSeek);
-        video.addEventListener("error", onErr);
-        video.currentTime = t;
+      await new Promise<void>((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          video.removeEventListener("seeked", finish);
+          video.removeEventListener("error", finish);
+          resolve();
+        };
+        video.addEventListener("seeked", finish);
+        video.addEventListener("error", finish);
+        try {
+          video.currentTime = t;
+        } catch {
+          finish();
+        }
+        // Safety timeout in case `seeked` never fires (e.g. target ≈ current time).
+        setTimeout(finish, 400);
       });
       await waitForPaintedFrame();
       try {
