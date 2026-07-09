@@ -59,6 +59,7 @@ import {
   DEFAULT_STREAM_URL,
 } from "@/lib/hls/shared-recorder";
 import { SubtitlePreview } from "@/components/cutter/SubtitlePreview";
+import { SyncCalibrator } from "@/components/cutter/SyncCalibrator";
 
 const indexSearchSchema = z.object({
   recording: z.string().uuid().optional(),
@@ -411,6 +412,7 @@ function Dashboard() {
   const [lowPerf, setLowPerf] = useState(false);
   const [maxHeight, setMaxHeight] = useState<0 | 480 | 720 | 1080>(0);
   const [audioOffsetSec, setAudioOffsetSec] = useState(0);
+  const [syncOpen, setSyncOpen] = useState(false);
 
 
   const [stage, setStage] = useState<Stage>("idle");
@@ -1632,6 +1634,20 @@ function Dashboard() {
                         </Button>
                       )}
                     </div>
+                    <div className="mt-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setSyncOpen(true)}
+                        disabled={!file}
+                      >
+                        Calibrate with a transcript cue…
+                      </Button>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Generates a short preview around a chosen cue so you can nudge until video and audio line up.
+                      </p>
+                    </div>
                   </div>
 
                   <div>
@@ -1781,6 +1797,17 @@ function Dashboard() {
           </Card>
         </div>
       </main>
+
+      <SyncCalibrator
+        open={syncOpen}
+        onClose={() => setSyncOpen(false)}
+        cues={cues}
+        getSource={() =>
+          file ? (isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file) : null
+        }
+        offset={audioOffsetSec}
+        setOffset={setAudioOffsetSec}
+      />
 
       <footer className="mx-auto max-w-7xl px-6 py-8 text-xs text-muted-foreground">
         Processing runs entirely in your browser via ffmpeg.wasm. Only the extracted audio is sent to LuxASR (uni.lu)
