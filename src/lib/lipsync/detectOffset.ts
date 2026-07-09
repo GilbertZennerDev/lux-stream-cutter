@@ -170,11 +170,15 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
     ).requestVideoFrameCallback?.bind(video);
     const waitForPaintedFrame = () =>
       new Promise<void>((resolve) => {
+        let done = false;
+        const finish = () => { if (!done) { done = true; resolve(); } };
         if (rvfc) {
-          rvfc(() => resolve());
+          rvfc(() => finish());
         } else {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          requestAnimationFrame(() => requestAnimationFrame(() => finish()));
         }
+        // Safety timeout — some browsers don't fire rVFC for paused seeks.
+        setTimeout(finish, 150);
       });
 
     for (let i = 0; i < frameCount; i++) {
