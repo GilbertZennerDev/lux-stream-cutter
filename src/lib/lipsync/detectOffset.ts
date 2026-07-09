@@ -27,6 +27,7 @@ export interface DetectResult {
 
 // Cache one landmarker per delegate — GPU init is expensive.
 const landmarkerCache = new Map<LipsyncDelegate, Promise<FaceLandmarker>>();
+const landmarkerLastTimestamp = new WeakMap<FaceLandmarker, number>();
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -96,7 +97,24 @@ async function getLandmarkerWithTimeout(
       return await withTimeout(getLandmarker("CPU"), 30_000, "CPU face model timed out");
     }
   }
-  return await withTimeout(getLandmarker("CPU"), 30_000, "CPU face model timed out");
+  try {
+    return await withTimeout(getLandmarker("CPU"), 30_000, "CPU face model timed out");
+  } catch (err) {
+    landmarkerCache.delete("CPU");
+    throw err;
+  }
+}
+
+function createTimestampMapper(landmarker: FaceLandmarker): (mediaMs: number) => number {
+  const previous = landmarkerLastTimestamp.get(landmarker) ?? 0;
+  const base = previous + 1_000;
+  let last = previous;
+  return (mediaMs: number) => {
+    const timestamp = Math.max(last + 1, base + Math.max(0, Math.round(mediaMs)));
+    last = timestamp;
+    landmarkerLastTimestamp.set(landmarker, timestamp);
+    return timestamp;
+  };
 }
 
 /** Vertical mouth aperture, normalised by face height. Returns NaN if unavailable. */
@@ -316,7 +334,7 @@ async function sampleMouthByPlayback(
   }
 
   let nextIdx = 0;
-  let lastTimestamp = 0;
+  const toLandmarkerTime = createTimestampMapper(landmarker);
   const timeoutMs = Math.min(90_000, Math.max(15_000, duration * 2_500 + frameCount * 300));
   try {
     await withTimeout(
@@ -330,8 +348,7 @@ async function sampleMouthByPlayback(
 
           const target = (nextIdx + 0.5) / fps;
           if (mediaTime + 0.02 >= target) {
-            const timestamp = Math.max(lastTimestamp + 1, Math.round(mediaTime * 1000));
-            lastTimestamp = timestamp;
+            const timestamp = toLandmarkerTime(mediaTime * 1000);
             const value = detectMouthAt(landmarker, video, timestamp);
             do {
               mouth[nextIdx] = value;
@@ -374,15 +391,14 @@ async function sampleMouthBySeeking(
   const frameCount = Math.max(8, Math.floor(duration * fps));
   const mouth = new Float32Array(frameCount);
   for (let i = 0; i < frameCount; i++) mouth[i] = NaN;
-  let lastTimestamp = 0;
+  const toLandmarkerTime = createTimestampMapper(landmarker);
 
   for (let i = 0; i < frameCount; i++) {
     const t = (i + 0.5) / fps;
     if (t >= duration) break;
     await seekTo(video, t, 1_500).catch(() => undefined);
     await waitForPaintedFrame(video);
-    const timestamp = Math.max(lastTimestamp + 1, Math.round(t * 1000));
-    lastTimestamp = timestamp;
+    const timestamp = toLandmarkerTime(t * 1000);
     mouth[i] = detectMouthAt(landmarker, video, timestamp);
     if (i % 3 === 0) report("Analysing frames…", 0.05 + 0.75 * (i / frameCount));
   }
