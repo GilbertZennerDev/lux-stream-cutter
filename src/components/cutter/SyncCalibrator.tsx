@@ -33,6 +33,8 @@ export function SyncCalibrator({ open, onClose, cues, getSource, offset, setOffs
   const [cueIdx, setCueIdx] = useState<number>(0);
   const [localOffset, setLocalOffset] = useState<number>(offset);
   const [busy, setBusy] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [autoStatus, setAutoStatus] = useState<string>("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
