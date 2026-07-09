@@ -27,6 +27,23 @@ export interface DetectResult {
 
 // Cache one landmarker per delegate — GPU init is expensive.
 const landmarkerCache = new Map<LipsyncDelegate, Promise<FaceLandmarker>>();
+const landmarkerLastTimestamp = new WeakMap<FaceLandmarker, number>();
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = window.setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        window.clearTimeout(id);
+        resolve(value);
+      },
+      (err) => {
+        window.clearTimeout(id);
+        reject(err);
+      },
+    );
+  });
+}
 
 async function createLandmarker(delegate: LipsyncDelegate): Promise<FaceLandmarker> {
   const fileset = await FilesetResolver.forVisionTasks(
@@ -65,6 +82,39 @@ async function getLandmarker(delegate: LipsyncDelegate): Promise<{ landmarker: F
     }
     throw err;
   }
+}
+
+async function getLandmarkerWithTimeout(
+  delegate: LipsyncDelegate,
+): Promise<{ landmarker: FaceLandmarker; used: LipsyncDelegate }> {
+  if (delegate === "GPU") {
+    try {
+      return await withTimeout(getLandmarker("GPU"), 15_000, "GPU face model timed out");
+    } catch (err) {
+      landmarkerCache.delete("GPU");
+      // eslint-disable-next-line no-console
+      console.warn("[lipsync] GPU delegate unavailable, falling back to CPU", err);
+      return await withTimeout(getLandmarker("CPU"), 30_000, "CPU face model timed out");
+    }
+  }
+  try {
+    return await withTimeout(getLandmarker("CPU"), 30_000, "CPU face model timed out");
+  } catch (err) {
+    landmarkerCache.delete("CPU");
+    throw err;
+  }
+}
+
+function createTimestampMapper(landmarker: FaceLandmarker): (mediaMs: number) => number {
+  const previous = landmarkerLastTimestamp.get(landmarker) ?? 0;
+  const base = previous + 1_000;
+  let last = previous;
+  return (mediaMs: number) => {
+    const timestamp = Math.max(last + 1, base + Math.max(0, Math.round(mediaMs)));
+    last = timestamp;
+    landmarkerLastTimestamp.set(landmarker, timestamp);
+    return timestamp;
+  };
 }
 
 /** Vertical mouth aperture, normalised by face height. Returns NaN if unavailable. */
@@ -124,6 +174,45 @@ function zscore(a: Float32Array): Float32Array {
   return out;
 }
 
+function smooth(a: Float32Array, radius: number): Float32Array {
+  if (radius <= 0 || a.length <= 2) return new Float32Array(a);
+  const out = new Float32Array(a.length);
+  for (let i = 0; i < a.length; i++) {
+    let sum = 0;
+    let count = 0;
+    for (let j = Math.max(0, i - radius); j <= Math.min(a.length - 1, i + radius); j++) {
+      sum += a[j];
+      count++;
+    }
+    out[i] = sum / Math.max(1, count);
+  }
+  return out;
+}
+
+function motionSignal(a: Float32Array): Float32Array {
+  const out = new Float32Array(a.length);
+  out[0] = 0;
+  for (let i = 1; i < a.length; i++) out[i] = Math.abs(a[i] - a[i - 1]);
+  return smooth(out, 1);
+}
+
+function maxValue(a: Float32Array): number {
+  let max = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] > max) max = a[i];
+  return max;
+}
+
+function rangeValue(a: Float32Array): number {
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < a.length; i++) {
+    const v = a[i];
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return Number.isFinite(min) && Number.isFinite(max) ? max - min : 0;
+}
+
 /** Interpolate NaNs in a series (linear between known values, edge-extend). */
 function fillNaNs(a: Float32Array): { filled: Float32Array; validCount: number } {
   const out = new Float32Array(a.length);
@@ -147,14 +236,184 @@ function fillNaNs(a: Float32Array): { filled: Float32Array; validCount: number }
   return { filled: out, validCount: valid };
 }
 
+function waitForMetadata(video: HTMLVideoElement): Promise<void> {
+  if (video.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve();
+  return withTimeout(
+    new Promise<void>((resolve, reject) => {
+      video.addEventListener("loadedmetadata", () => resolve(), { once: true });
+      video.addEventListener("error", () => reject(new Error("Could not load preview clip")), { once: true });
+    }),
+    10_000,
+    "Timed out loading preview metadata",
+  );
+}
+
+function seekTo(video: HTMLVideoElement, seconds: number, timeoutMs = 1_500): Promise<void> {
+  return withTimeout(
+    new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        video.removeEventListener("seeked", finish);
+        video.removeEventListener("error", finish);
+        resolve();
+      };
+      video.addEventListener("seeked", finish);
+      video.addEventListener("error", finish);
+      try {
+        video.currentTime = seconds;
+      } catch {
+        finish();
+      }
+      window.setTimeout(finish, timeoutMs);
+    }),
+    timeoutMs + 250,
+    "Timed out seeking video frame",
+  );
+}
+
+function waitForPaintedFrame(video: HTMLVideoElement, timeoutMs = 250): Promise<void> {
+  const rvfc = (
+    video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: () => void) => number;
+    }
+  ).requestVideoFrameCallback?.bind(video);
+  return withTimeout(
+    new Promise<void>((resolve) => {
+      if (rvfc) rvfc(() => resolve());
+      else requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }),
+    timeoutMs,
+    "Timed out waiting for video frame",
+  ).catch(() => undefined);
+}
+
+function detectMouthAt(
+  landmarker: FaceLandmarker,
+  video: HTMLVideoElement,
+  timestampMs: number,
+): number {
+  try {
+    const res = landmarker.detectForVideo(video, timestampMs);
+    const lm = res.faceLandmarks?.[0];
+    return lm ? mouthAperture(lm) : NaN;
+  } catch {
+    return NaN;
+  }
+}
+
+async function sampleMouthByPlayback(
+  video: HTMLVideoElement,
+  landmarker: FaceLandmarker,
+  fps: number,
+  duration: number,
+  report: (label: string, pct: number) => void,
+): Promise<Float32Array | null> {
+  const rvfc = (
+    video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (
+        cb: (_now: number, metadata: { mediaTime?: number; presentationTime?: number }) => void,
+      ) => number;
+    }
+  ).requestVideoFrameCallback?.bind(video);
+  if (!rvfc) return null;
+
+  const frameCount = Math.max(8, Math.floor(duration * fps));
+  const mouth = new Float32Array(frameCount);
+  for (let i = 0; i < frameCount; i++) mouth[i] = NaN;
+
+  await seekTo(video, 0, 1_500).catch(() => undefined);
+  video.muted = true;
+  video.playbackRate = Math.min(2, Math.max(1, video.playbackRate || 1));
+  try {
+    await withTimeout(video.play(), 2_500, "Muted analysis playback did not start");
+  } catch {
+    video.pause();
+    return null;
+  }
+
+  let nextIdx = 0;
+  const toLandmarkerTime = createTimestampMapper(landmarker);
+  const timeoutMs = Math.min(90_000, Math.max(15_000, duration * 2_500 + frameCount * 300));
+  try {
+    await withTimeout(
+      new Promise<void>((resolve) => {
+        const step = (_now: number, metadata: { mediaTime?: number; presentationTime?: number }) => {
+          const mediaTime = metadata.mediaTime ?? video.currentTime;
+          if (nextIdx >= frameCount || mediaTime >= duration || video.ended) {
+            resolve();
+            return;
+          }
+
+          const target = (nextIdx + 0.5) / fps;
+          if (mediaTime + 0.02 >= target) {
+            const timestamp = toLandmarkerTime(mediaTime * 1000);
+            const value = detectMouthAt(landmarker, video, timestamp);
+            do {
+              mouth[nextIdx] = value;
+              nextIdx++;
+            } while (nextIdx < frameCount && (nextIdx + 0.5) / fps <= mediaTime + 0.02);
+
+            if (nextIdx % 3 === 0) {
+              report("Analysing frames…", 0.05 + 0.75 * (nextIdx / frameCount));
+            }
+          }
+
+          rvfc(step);
+        };
+        rvfc(step);
+      }),
+      timeoutMs,
+      "Timed out while analysing video frames",
+    ).catch((err) => {
+      // Return the frames collected so far; downstream face-coverage checks
+      // decide whether this partial sample is useful. This prevents a late
+      // timeout from discarding otherwise valid analysis data and then trying
+      // to reuse the same VIDEO-mode landmarker with reset timestamps.
+      // eslint-disable-next-line no-console
+      console.warn("[lipsync] playback sampling ended early", err);
+    });
+  } finally {
+    video.pause();
+  }
+
+  return mouth;
+}
+
+async function sampleMouthBySeeking(
+  video: HTMLVideoElement,
+  landmarker: FaceLandmarker,
+  fps: number,
+  duration: number,
+  report: (label: string, pct: number) => void,
+): Promise<Float32Array> {
+  const frameCount = Math.max(8, Math.floor(duration * fps));
+  const mouth = new Float32Array(frameCount);
+  for (let i = 0; i < frameCount; i++) mouth[i] = NaN;
+  const toLandmarkerTime = createTimestampMapper(landmarker);
+
+  for (let i = 0; i < frameCount; i++) {
+    const t = (i + 0.5) / fps;
+    if (t >= duration) break;
+    await seekTo(video, t, 1_500).catch(() => undefined);
+    await waitForPaintedFrame(video);
+    const timestamp = toLandmarkerTime(t * 1000);
+    mouth[i] = detectMouthAt(landmarker, video, timestamp);
+    if (i % 3 === 0) report("Analysing frames…", 0.05 + 0.75 * (i / frameCount));
+  }
+
+  return mouth;
+}
+
 export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}): Promise<DetectResult> {
-  const fps = opts.fps ?? 15;
+  const fps = Math.max(8, Math.min(30, opts.fps ?? 15));
   const maxLagSec = opts.maxLagSec ?? 1.0;
   const delegate: LipsyncDelegate = opts.delegate ?? "CPU";
   const report = (label: string, pct: number) => opts.onProgress?.(label, Math.max(0, Math.min(1, pct)));
 
   report(`Loading face model (${delegate})…`, 0);
-  const { landmarker, used: delegateUsed } = await getLandmarker(delegate);
+  const { landmarker, used: delegateUsed } = await getLandmarkerWithTimeout(delegate);
 
   // Build a video element from the blob.
   const url = URL.createObjectURL(clip);
@@ -164,82 +423,34 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
   video.playsInline = true;
   video.preload = "auto";
   video.crossOrigin = "anonymous";
+  video.style.position = "fixed";
+  video.style.left = "-9999px";
+  video.style.top = "0";
+  video.style.width = "1px";
+  video.style.height = "1px";
+  video.style.opacity = "0";
+  video.style.pointerEvents = "none";
   try {
-    await new Promise<void>((resolve, reject) => {
-      video.onloadedmetadata = () => resolve();
-      video.onerror = () => reject(new Error("Could not load preview clip"));
-    });
+    document.body.appendChild(video);
+    await waitForMetadata(video);
     // Some browsers report duration = Infinity for fragmented mp4 until seeked.
     let duration = video.duration;
     if (!Number.isFinite(duration) || duration <= 0) {
-      await new Promise<void>((resolve) => {
-        video.currentTime = 1e6;
-        video.onseeked = () => { duration = video.duration; resolve(); };
-      });
-      video.currentTime = 0;
-      await new Promise<void>((resolve) => { video.onseeked = () => resolve(); });
+      await seekTo(video, 1e6, 2_000).catch(() => undefined);
+      duration = video.duration;
+      await seekTo(video, 0, 2_000).catch(() => undefined);
     }
     if (!Number.isFinite(duration) || duration <= 0) throw new Error("Zero-length clip");
 
-    const frameCount = Math.max(8, Math.floor(duration * fps));
-    const mouth = new Float32Array(frameCount);
-    for (let i = 0; i < frameCount; i++) mouth[i] = NaN;
-
     report("Analysing frames…", 0.05);
-    // Some browsers (Chromium in particular) fire `seeked` before the new
-    // frame is actually painted, so MediaPipe reads the previous frame and
-    // mouth aperture ends up nearly constant → flat cross-correlation → 0
-    // offset. Wait for a real painted frame via requestVideoFrameCallback
-    // when available, and fall back to a double-rAF otherwise.
-    const rvfc = (
-      video as HTMLVideoElement & {
-        requestVideoFrameCallback?: (cb: () => void) => number;
-      }
-    ).requestVideoFrameCallback?.bind(video);
-    const waitForPaintedFrame = () =>
-      new Promise<void>((resolve) => {
-        let done = false;
-        const finish = () => { if (!done) { done = true; resolve(); } };
-        if (rvfc) {
-          rvfc(() => finish());
-        } else {
-          requestAnimationFrame(() => requestAnimationFrame(() => finish()));
-        }
-        // Safety timeout — some browsers don't fire rVFC for paused seeks.
-        setTimeout(finish, 150);
-      });
-
-    for (let i = 0; i < frameCount; i++) {
-      const t = (i + 0.5) / fps;
-      if (t >= duration) break;
-      await new Promise<void>((resolve) => {
-        let done = false;
-        const finish = () => {
-          if (done) return;
-          done = true;
-          video.removeEventListener("seeked", finish);
-          video.removeEventListener("error", finish);
-          resolve();
-        };
-        video.addEventListener("seeked", finish);
-        video.addEventListener("error", finish);
-        try {
-          video.currentTime = t;
-        } catch {
-          finish();
-        }
-        // Safety timeout in case `seeked` never fires (e.g. target ≈ current time).
-        setTimeout(finish, 400);
-      });
-      await waitForPaintedFrame();
-      try {
-        const res = landmarker.detectForVideo(video, Math.round(t * 1000));
-        const lm = res.faceLandmarks?.[0];
-        mouth[i] = lm ? mouthAperture(lm) : NaN;
-      } catch {
-        mouth[i] = NaN;
-      }
-      if (i % 3 === 0) report("Analysing frames…", 0.05 + 0.75 * (i / frameCount));
+    const frameCount = Math.max(8, Math.floor(duration * fps));
+    let mouth = await sampleMouthByPlayback(video, landmarker, fps, duration, report).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn("[lipsync] playback sampling failed, falling back to seeking", err);
+      return null;
+    });
+    if (!mouth) {
+      mouth = await sampleMouthBySeeking(video, landmarker, fps, duration, report);
     }
 
     const { filled: mouthFilled, validCount } = fillNaNs(mouth);
@@ -252,13 +463,13 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
     // meaningless and would return ~0. Report clearly instead of pretending
     // the offset is already perfect.
     let mMin = Infinity, mMax = -Infinity, mMean = 0;
-    for (let i = 0; i < validCount; i++) {
+    for (let i = 0; i < mouthFilled.length; i++) {
       const v = mouthFilled[i];
       if (v < mMin) mMin = v;
       if (v > mMax) mMax = v;
       mMean += v;
     }
-    mMean /= validCount || 1;
+    mMean /= mouthFilled.length || 1;
     const mouthRange = mMax - mMin;
 
     report("Decoding audio…", 0.9);
@@ -268,8 +479,13 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
 
     report("Correlating…", 0.95);
     const n = Math.min(mouthFilled.length, audio.length);
-    const m = zscore(mouthFilled.subarray(0, n));
-    const a = zscore(audio.subarray(0, n));
+    if (n < Math.max(8, fps)) throw new Error("Clip is too short for reliable auto-sync analysis.");
+    const mouthMotion = motionSignal(smooth(mouthFilled.subarray(0, n), 2));
+    const audioMotion = motionSignal(smooth(audio.subarray(0, n), 2));
+    const mouthMotionPeak = maxValue(mouthMotion);
+    const audioMotionPeak = maxValue(audioMotion);
+    const m = zscore(mouthMotion);
+    const a = zscore(audioMotion);
 
     // Cross-correlate: shift audio by k frames.
     // corr[k] = mean over i of m[i] * a[i - k]. Best k > 0 => audio arrives earlier
@@ -316,11 +532,14 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
       faceCoverage: Number(faceCoverage.toFixed(2)),
       mouthRange: Number(mouthRange.toFixed(4)),
       mouthMean: Number(mMean.toFixed(4)),
+      mouthMotionPeak: Number(mouthMotionPeak.toFixed(4)),
       audioPeak: Number(aMax.toFixed(4)),
+      audioMotionPeak: Number(audioMotionPeak.toFixed(4)),
       bestK,
       bestKF: Number(bestKF.toFixed(3)),
       bestCorr: Number(bestCorr.toFixed(3)),
       confidence: Number(confidence.toFixed(3)),
+      delegateUsed,
     });
 
     if (mouthRange < 0.005) {
@@ -330,6 +549,17 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
     }
     if (aMax < 0.005) {
       throw new Error(`Clip audio is nearly silent (peak ${aMax.toFixed(3)}). Pick a cue with clear speech.`);
+    }
+    if (rangeValue(mouthMotion) < 0.0005 || mouthMotionPeak < 0.0005) {
+      throw new Error("Mouth movement changes are too subtle in this cue. Pick a cue with clearer speech movement.");
+    }
+    if (audioMotionPeak < 0.0005) {
+      throw new Error("Audio changes are too subtle in this cue. Pick a cue with clearer speech and less silence.");
+    }
+    if (bestCorr < 0.08 || confidence < 0.04) {
+      throw new Error(
+        `Could not find a reliable sync offset (confidence ${Math.round(confidence * 100)}%). Pick a cue with a clear face and clean speech.`,
+      );
     }
 
     report("Done", 1);
@@ -342,6 +572,10 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
     };
 
   } finally {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    video.remove();
     URL.revokeObjectURL(url);
   }
 }

@@ -128,13 +128,22 @@ export function SyncCalibrator({ open, onClose, cues, getSource, offset, setOffs
       });
       const next = Number((localOffset + result.offsetSec).toFixed(3));
       setLocalOffset(next);
-      // Also show a preview at the new offset for a manual sanity check.
-      const url = URL.createObjectURL(blob);
+      setAutoStatus("Generating corrected preview…");
+      const corrected = await cutVideo(src, start, end, undefined, {
+        lowPerf: perf.lowPerf,
+        maxHeight: perf.maxHeight || undefined,
+        audioOffsetSec: next,
+      });
+      const correctedBlob = new Blob([corrected as BlobPart], { type: "video/mp4" });
+      const url = URL.createObjectURL(correctedBlob);
       setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return url; });
+      setTimeout(() => {
+        videoRef.current?.play().catch(() => {});
+      }, 50);
       const conf = Math.round(result.confidence * 100);
       const cov = Math.round(result.faceCoverage * 100);
       toast.success(
-        `Detected residual ${result.offsetSec >= 0 ? "+" : ""}${result.offsetSec.toFixed(3)}s → offset ${next.toFixed(3)}s (confidence ${conf}%, face ${cov}%)`,
+        `Detected residual ${result.offsetSec >= 0 ? "+" : ""}${result.offsetSec.toFixed(3)}s → offset ${next.toFixed(3)}s (${result.delegateUsed}, confidence ${conf}%, face ${cov}%)`,
       );
     } catch (err) {
       toast.error(`Auto-detect failed: ${(err as Error).message}`);

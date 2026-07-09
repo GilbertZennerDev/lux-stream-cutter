@@ -203,7 +203,11 @@ export function profileFor(tier: PerfTier, caps: PerfCapabilities): TierProfile 
       lowPerf: false,
       maxHeight: 0,
       threads: Math.max(1, Math.min(threadsMax, 2)),
-      lipsyncDelegate: caps.webgl2 ? "GPU" : "CPU",
+      // WebGL2 only proves the browser can create a graphics context; it does
+      // not guarantee that MediaPipe's GPU delegate is stable or faster. Keep
+      // the Medium tier conservative so auto-sync does not hang on common
+      // integrated GPUs. High tier still opts into GPU below.
+      lipsyncDelegate: "CPU",
       lipsyncFps: 20,
       lipsyncMaxLag: 1.0,
       webcodecsAudio: caps.webcodecsDecode,
