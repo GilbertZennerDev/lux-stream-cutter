@@ -909,7 +909,7 @@ function Dashboard() {
       moveToStage("cutting");
       setProgress(0);
       appendLog(`[CUT] ${picked.length} selected blocks → ${formatSeconds(offset)}`);
-      const cut = await cutAndConcat(sourceForCut, parsedSegments, setProgress, { lowPerf, maxHeight });
+      const cut = await cutAndConcat(sourceForCut, parsedSegments, setProgress, { lowPerf, maxHeight, audioOffsetSec });
       checkCancel();
       const clip = new Blob([cut as BlobPart], { type: "video/mp4" });
       setClipBlob(clip);
