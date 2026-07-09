@@ -339,6 +339,8 @@ async function sampleMouthByPlayback(
   // Watchdog: if rvfc never fires (Chromium throttles hidden/offscreen video),
   // bail out fast so the seek fallback can run.
   let framesSeen = 0;
+  let lastFrameAt = performance.now();
+  let playbackStalled = false;
   const stallDeadline = window.setTimeout(() => {
     if (framesSeen === 0) {
       // eslint-disable-next-line no-console
@@ -349,11 +351,38 @@ async function sampleMouthByPlayback(
   try {
     await withTimeout(
       new Promise<void>((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          video.removeEventListener("ended", finish);
+          video.removeEventListener("pause", finish);
+          resolve();
+        };
+        const stallInterval = window.setInterval(() => {
+          if (done) {
+            window.clearInterval(stallInterval);
+            return;
+          }
+          if (framesSeen > 0 && performance.now() - lastFrameAt > 3_000) {
+            playbackStalled = true;
+            // eslint-disable-next-line no-console
+            console.warn("[lipsync] playback frame callbacks stalled — switching sampler");
+            window.clearInterval(stallInterval);
+            video.pause();
+            finish();
+          }
+        }, 500);
+        video.addEventListener("ended", finish, { once: true });
+        video.addEventListener("pause", finish, { once: true });
         const step = (_now: number, metadata: { mediaTime?: number; presentationTime?: number }) => {
+          if (done) return;
           framesSeen++;
+          lastFrameAt = performance.now();
           const mediaTime = metadata.mediaTime ?? video.currentTime;
           if (nextIdx >= frameCount || mediaTime >= duration || video.ended || video.paused) {
-            resolve();
+            window.clearInterval(stallInterval);
+            finish();
             return;
           }
 
@@ -368,6 +397,16 @@ async function sampleMouthByPlayback(
 
             if (nextIdx % 3 === 0) {
               report("Analysing frames…", 0.05 + 0.75 * (nextIdx / frameCount));
+            }
+
+            // 80% is the end of frame analysis. Do not wait for another
+            // requestVideoFrameCallback after the final sample; Chromium may
+            // stop scheduling callbacks as playback reaches the end.
+            if (nextIdx >= frameCount) {
+              report("Analysing frames…", 0.8);
+              window.clearInterval(stallInterval);
+              finish();
+              return;
             }
           }
 
@@ -388,6 +427,7 @@ async function sampleMouthByPlayback(
 
   // If we captured no frames at all, signal caller to use the seek fallback.
   if (nextIdx === 0) return null;
+  if (playbackStalled) return null;
   return mouth;
 }
 
