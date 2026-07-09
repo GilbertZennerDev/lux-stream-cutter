@@ -216,8 +216,8 @@ export function SyncCalibrator({ open, onClose, cues, getSource, offset, setOffs
             </p>
           </div>
 
-          <div>
-            <Button type="button" size="sm" onClick={generate} disabled={busy || !cue}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" size="sm" onClick={generate} disabled={busy || autoBusy || !cue}>
               {busy ? (
                 <Loader2 className="h-3 w-3 mr-2 animate-spin" />
               ) : (
@@ -225,7 +225,29 @@ export function SyncCalibrator({ open, onClose, cues, getSource, offset, setOffs
               )}
               Generate preview with offset {localOffset.toFixed(3)}s
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={autoDetect}
+              disabled={busy || autoBusy || !cue}
+              title="Analyse a short clip and estimate lip-sync automatically"
+            >
+              {autoBusy ? (
+                <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3 mr-2" />
+              )}
+              Auto-detect sync
+            </Button>
+            {autoStatus && (
+              <span className="text-xs text-muted-foreground">{autoStatus}</span>
+            )}
           </div>
+          <p className="text-xs text-muted-foreground">
+            Auto-detect needs the speaker's face visible in the chosen cue. It analyses
+            mouth movement against the audio envelope and adjusts the offset.
+          </p>
 
           {previewUrl && (
             <div className="rounded-md border overflow-hidden bg-black">
@@ -247,7 +269,7 @@ export function SyncCalibrator({ open, onClose, cues, getSource, offset, setOffs
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={apply} disabled={busy}>
+          <Button onClick={apply} disabled={busy || autoBusy}>
             Apply offset ({localOffset.toFixed(3)}s)
           </Button>
         </DialogFooter>
