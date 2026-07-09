@@ -478,7 +478,7 @@ export async function detectLipSyncOffset(clip: Blob, opts: DetectOptions = {}):
       mouth = await sampleMouthBySeeking(video, landmarker, fps, duration, report);
     }
 
-    const { filled: mouthFilled, validCount } = fillNaNs(mouth);
+    const { filled: mouthFilled, validCount } = fillNaNs(mouth!);
     const faceCoverage = validCount / frameCount;
     if (validCount < Math.max(6, frameCount * 0.25)) {
       throw new Error(`No consistent face detected (${Math.round(faceCoverage * 100)}% of frames). Pick a cue with the presenter clearly on-screen.`);
