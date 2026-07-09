@@ -1798,6 +1798,17 @@ function Dashboard() {
         </div>
       </main>
 
+      <SyncCalibrator
+        open={syncOpen}
+        onClose={() => setSyncOpen(false)}
+        cues={cues}
+        getSource={() =>
+          file ? (isTransportStream(file) && sourcePreviewBlob ? sourcePreviewBlob : file) : null
+        }
+        offset={audioOffsetSec}
+        setOffset={setAudioOffsetSec}
+      />
+
       <footer className="mx-auto max-w-7xl px-6 py-8 text-xs text-muted-foreground">
         Processing runs entirely in your browser via ffmpeg.wasm. Only the extracted audio is sent to LuxASR (uni.lu)
         for transcription. Keep this tab open while jobs run.
