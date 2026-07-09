@@ -417,6 +417,14 @@ function Dashboard() {
   const [audioOffsetSec, setAudioOffsetSec] = useState(0);
   const [syncOpen, setSyncOpen] = useState(false);
 
+  const perfState = usePerfTier();
+  const perf = perfState.profile;
+  // Effective ffmpeg options derived from the perf tier, but the manual
+  // Low-perf switch and manual max-height selector still take precedence
+  // when the user has explicitly set them.
+  const effLowPerf = lowPerf || perf.lowPerf;
+  const effMaxHeight: 0 | 480 | 720 | 1080 = maxHeight !== 0 ? maxHeight : perf.maxHeight;
+
 
   const [stage, setStage] = useState<Stage>("idle");
   const [progress, setProgress] = useState(0);
