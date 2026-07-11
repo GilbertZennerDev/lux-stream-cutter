@@ -26,6 +26,8 @@ interface Props {
   videoWidth?: number;
   /** If false, defers snapshot until the element is visible. */
   eager?: boolean;
+  /** Optional custom font family (matches ASS Fontname + @font-face). */
+  fontFamily?: string | null;
 }
 
 /**
