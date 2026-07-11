@@ -51,7 +51,7 @@ async function detectFamily(file: Blob, filename: string, format: string): Promi
     const opentype = await import("opentype.js");
     const buf = await file.arrayBuffer();
     const font = opentype.parse(buf);
-    const names = font.names as Record<string, Record<string, string> | undefined>;
+    const names = font.names as unknown as Record<string, Record<string, string> | undefined>;
     const pick = (key: string) => {
       const entry = names[key];
       if (!entry) return null;
