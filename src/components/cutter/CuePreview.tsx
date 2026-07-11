@@ -38,7 +38,7 @@ interface Props {
  */
 export function CuePreview({
   videoSrc, time, xPct, yPct, fontSize, outline, text, lockAxis = "free", onChange,
-  size = "inline", videoWidth = 1280, eager = false,
+  size = "inline", videoWidth = 1280, eager = false, fontFamily,
 }: Props) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
