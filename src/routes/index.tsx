@@ -813,6 +813,7 @@ function Dashboard() {
     setAudioOffsetSec(saved.audioOffsetSec);
     setBurnIn(saved.burnIn);
     if (saved.lockAxis) setLockAxis(saved.lockAxis);
+    if (saved.fontFamily !== undefined) setFontFamily(saved.fontFamily);
   };
 
   const acceptRestore = async () => {
