@@ -35,7 +35,7 @@ interface Props {
  */
 export function CuePositionDialog({
   open, onOpenChange, cue, videoSrc, defaultX, defaultY, fontSize, outline, videoWidth, lockAxis, onLockAxisChange,
-  onChange, onReset, onApplyToFollowing, onApplyToAll,
+  onChange, onReset, onApplyToFollowing, onApplyToAll, fontFamily,
 }: Props) {
   const cx = cue?.xPct ?? defaultX;
   const cy = cue?.yPct ?? defaultY;
