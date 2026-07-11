@@ -856,6 +856,7 @@ function Dashboard() {
         audioOffsetSec,
         burnIn,
         lockAxis,
+        fontFamily,
       }).catch(() => {});
     }, 800);
     return () => {
@@ -863,7 +864,7 @@ function Dashboard() {
     };
   }, [
     sessionKey, file, rawCues, cues, selectedCues, mode, segments,
-    subX, subY, fontSize, subOutline, maxSentences, maxChars, audioOffsetSec, burnIn, lockAxis,
+    subX, subY, fontSize, subOutline, maxSentences, maxChars, audioOffsetSec, burnIn, lockAxis, fontFamily,
   ]);
 
   const resetSession = async () => {
