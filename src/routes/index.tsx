@@ -59,13 +59,23 @@ import {
   DEFAULT_STREAM_URL,
 } from "@/lib/hls/shared-recorder";
 import { SubtitlePreview } from "@/components/cutter/SubtitlePreview";
+import { LiveSubtitleOverlay } from "@/components/cutter/LiveSubtitleOverlay";
 import { SyncCalibrator } from "@/components/cutter/SyncCalibrator";
 import { PerfSelector } from "@/components/cutter/PerfSelector";
 import { usePerfTier } from "@/lib/perf/usePerfTier";
 import { extractAudioMp3Fast } from "@/lib/webcodecs/audio";
+import { takePendingSource } from "@/lib/session/pendingSource";
+import {
+  saveCutterSession,
+  loadCutterSession,
+  clearCutterSession,
+  makeRecordingKey,
+  makeFileKey,
+} from "@/lib/session/cutterSession";
 
 const indexSearchSchema = z.object({
   recording: z.string().uuid().optional(),
+  pending: z.string().uuid().optional(),
 });
 
 export const Route = createFileRoute("/")({
