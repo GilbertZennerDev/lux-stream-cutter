@@ -157,7 +157,7 @@ export function CuePreview({
       )}
 
       <span
-        className="absolute font-sans font-semibold text-white text-center leading-tight whitespace-pre-line pointer-events-none px-2"
+        className="absolute font-semibold text-white text-center leading-tight whitespace-pre-line pointer-events-none px-2"
         style={{
           left: `${xPct}%`,
           top: `${yPct}%`,
@@ -165,6 +165,7 @@ export function CuePreview({
           fontSize: `${previewFont}px`,
           textShadow: shadow,
           maxWidth: "92%",
+          fontFamily: fontFamily ? `"${fontFamily}", system-ui, sans-serif` : undefined,
         }}
       >
         {displayText}
