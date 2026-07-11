@@ -1010,8 +1010,9 @@ export async function burnSubtitles(
 
 
   try {
-    const runBurn = async (vf: string) => {
+    const runBurn = async (vf: string, label: string, verifyAss: string) => {
       try { await ffmpeg.deleteFile(outputName); } catch {}
+      emitFfmpegLog(`[BURN] Running ${label}`);
       await ffmpeg.exec([
         "-i", inputName,
         "-vf", vf,
@@ -1022,6 +1023,11 @@ export async function burnSubtitles(
         "-movflags", "+faststart",
         "-y", outputName,
       ]);
+      emitFfmpegLog("[BURN] MP4 created, verifying subtitle pixels…");
+      const metrics = await verifyBurnedSubtitlePixels(ffmpeg, inputName, outputName, verifyAss, perf, token);
+      emitFfmpegLog(
+        `[BURN] Verified visible subtitles (mean diff ${metrics.meanAbsDiff.toFixed(2)}, strong ${(metrics.strongDiffFraction * 100).toFixed(2)}%)`,
+      );
       return await readOutputFile(ffmpeg, outputName, "Subtitle burn-in");
     };
 
@@ -1039,6 +1045,15 @@ export async function burnSubtitles(
     // (e.g. Whitney Book's PostScript/internal name differs from the UI label).
 
     const sf = scaleFilter(perf);
+    const firstProbe = firstVisibilityProbe(assText);
+    emitFfmpegLog(
+      `[BURN] ASS cues: ${dialogueCount}${firstProbe ? `, first visibility check at ${firstProbe.timeSec.toFixed(2)}s near ${Math.round(firstProbe.xPct)},${Math.round(firstProbe.yPct)}` : ""}`,
+    );
+    emitFfmpegLog(
+      fontOverride
+        ? `[BURN] Selected font: ${fontOverride.family} (${fontOverride.format})${burnFont ? " with uploaded file" : " not burn-compatible; using built-in"}`
+        : `[BURN] Selected font: ${DEFAULT_FONT_FAMILY} built-in`,
+    );
     const candidateFamilies = await fontNameCandidates(
       installedFont.override?.bytes,
       burnFont?.family ?? DEFAULT_FONT_FAMILY,
@@ -1078,12 +1093,23 @@ export async function burnSubtitles(
       const safeAss = replaceAssStyleFont(assText, candidate);
       await ffmpeg.writeFile(subsName, new TextEncoder().encode(safeAss));
       const subsFilter = subtitleFilter(subsName);
-      const vf = ["setpts=PTS-STARTPTS", sf, subsFilter].filter(Boolean).join(",");
-      try {
-        emitFfmpegLog(`[FONT] Burning with ${candidate.family}${candidate.bold ? " (bold)" : ""}`);
-        return await runBurn(vf);
-      } catch (err) {
-        lastError = err;
+      const variants = uniqueStrings([
+        ["setpts=PTS-STARTPTS", subsFilter, sf].filter(Boolean).join(","),
+        ["setpts=PTS-STARTPTS", sf, subsFilter].filter(Boolean).join(","),
+      ]);
+      for (let i = 0; i < variants.length; i++) {
+        try {
+          emitFfmpegLog(`[FONT] Burning with ${candidate.family}${candidate.bold ? " (bold)" : ""}`);
+          return await runBurn(variants[i], `${candidate.family}${candidate.bold ? " (bold)" : ""} · graph ${i + 1}/${variants.length}`, safeAss);
+        } catch (err) {
+          lastError = err;
+          if (err instanceof BurnVerificationError) {
+            emitFfmpegLog(`[BURN] Verification failed for ${candidate.family}: ${err.message}`);
+            emitFfmpegLog("[BURN] Retrying with next burn graph/font…");
+            continue;
+          }
+          emitFfmpegLog(`[BURN] Burn attempt failed for ${candidate.family}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
     }
     throw lastError ?? new Error("Subtitle burn-in failed");
