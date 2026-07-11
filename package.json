@@ -57,6 +57,7 @@
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
     "hls.js": "^1.6.16",
+    "idb-keyval": "^6.3.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.575.0",
     "mp4box": "^2.4.1",
