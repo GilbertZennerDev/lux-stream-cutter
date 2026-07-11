@@ -136,7 +136,9 @@ export function LiveSubtitleOverlay({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        className="absolute inset-0 cursor-crosshair touch-none"
+        className={`absolute inset-0 touch-none ${
+          lockAxis === "x" ? "cursor-ew-resize" : lockAxis === "y" ? "cursor-ns-resize" : "cursor-crosshair"
+        }`}
         style={{ bottom: 40 /* clear native <video> controls */ }}
         role="application"
         aria-label="Drag to reposition subtitle"
@@ -156,11 +158,19 @@ export function LiveSubtitleOverlay({
         </span>
         <div className="absolute h-px w-full bg-white/10 pointer-events-none" style={{ top: `${activeY}%` }} />
         <div className="absolute w-px h-full bg-white/10 pointer-events-none" style={{ left: `${activeX}%` }} />
-        {activeCue && (
-          <div className="absolute top-1 left-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/80 text-primary-foreground pointer-events-none">
-            cue #{activeCue.index}
-          </div>
-        )}
+        <div className="absolute top-1 left-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/80 text-primary-foreground pointer-events-none flex items-center gap-1">
+          {activeCue ? (
+            <>editing cue #{activeCue.index}</>
+          ) : (
+            <>editing default position</>
+          )}
+          {lockAxis !== "free" && (
+            <span className="ml-1 flex items-center gap-0.5 opacity-90">
+              <LockKeyhole className="h-2.5 w-2.5" />
+              {lockAxis === "x" ? "X" : "Y"}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
