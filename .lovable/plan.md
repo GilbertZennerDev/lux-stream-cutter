@@ -1,73 +1,66 @@
 
-# 3 quality-of-life upgrades users will actually feel
+# Declutter the Cutter — keep only what users touch every session
 
-Scope: Cutter (`/`), Recordings (`/recordings`), Premiere (`/premiere`). Studio explicitly excluded.
+## My opinion
 
-I looked at the current UX and picked three friction points that hurt on every real session — not cosmetic polish. Each one is designed to be immediately noticeable the first time the user opens the tab.
+Agreed with your read. Since we shipped the **live subtitle overlay** and **cue-driven cutting** (users pick sentences in the transcript and hit "Cut selected"), the old Segment editor and the "Full pipeline / Just cut / Subs only" mode tabs are 95% dead weight. `Burn subtitles` and `Low-performance mode` are set-once-and-forget for almost everyone — they don't belong at the top level.
 
----
+But I don't want to **delete** them. Three real cases still need them:
+- Someone wants a raw trim with no transcription → `Just cut` + segments.
+- Someone wants an `.srt` only, no re-encode → `Subs only` + `Burn = off`.
+- A weak Mac that ffmpeg.wasm chokes on → `Low-performance mode`.
 
-## 1. Live subtitle preview on the real video (Cutter)
+So the right move is **hide, not remove** — collapse them into a single "Advanced" disclosure that's closed by default. The main surface becomes just: source → transcript list → live preview → Cut selected.
 
-**Today:** `SubtitlePreview` shows a fake black 16:9 box with the placeholder text "Beispill Ennertitlen". You drag it there, then have to imagine how it will look over the actual footage. Font size, outline, and vertical position are all guesswork until you burn a full clip.
+## What the Cutter shows by default (after)
 
-**Change:** Overlay the subtitle directly on the existing source video player.
-- The overlay shows the cue whose timestamp matches `currentTime` (falls back to placeholder if none).
-- Drag anywhere on the video to reposition — updates `subX/subY` live.
-- Font size / outline sliders update the overlay in real time on the real frame.
-- Per-cue position overrides (already stored on `SrtCue.xPct/yPct`) are shown when that cue is playing.
-- Keep the abstract box available as a fallback for when no source is loaded.
+```text
+┌─ Source (upload / recording chip / live snapshot)
+├─ Live video + draggable subtitle overlay
+├─ Transcript list  ── [ Cut selected ]  [ Download SRT ]
+├─ Subtitle look    (position sliders, font size, outline)
+└─ ▸ Advanced       (closed)
+```
 
-**Why users notice:** the first time they scrub the video and see their captions land on top of the actual speaker's chest, they'll get it. No more "burn → download → oh, too low → try again" loop.
+Nothing else visible until the user opens Advanced.
 
----
+## What moves into `▸ Advanced` (single `<details>` / Collapsible)
 
-## 2. Auto-save & restore Cutter session
+- Mode tabs: `Full pipeline` / `Just cut` / `Subs only`
+- Segment editor (Segment N, Start / End, Preview start/end, + Add segment, total duration)
+- `Burn subtitles into video` switch
+- `Low-performance mode` switch
+- Audio offset slider + `SyncCalibrator` (already niche)
+- `Max sentences / cue` and `Max chars / cue` (rarely re-tuned)
+- `PerfSelector` status (auto-detected tier — informational)
 
-**Today:** A page refresh, an accidental tab close, or navigating to Recordings and back wipes: loaded file reference, transcript, cue selections, per-cue subtitle positions, sub position/size/outline, audio offset, perf settings, cut segments. All the slow work (transcription especially) is gone.
+Keep in the main body:
+- Subtitle position (X/Y), font size, outline — they're what the live overlay reacts to, so they belong next to it.
 
-**Change:** Persist working state to IndexedDB, keyed by recording id (or a `local-<hash>` for uploaded files).
-- Persist: `rawCues`, `cues`, `selectedCues`, `subX/subY/fontSize/subOutline`, `maxSentences/maxChars`, `audioOffsetSec`, `segments`, `mode`, per-cue position overrides.
-- For recordings from the library: reload transparently when the same `?recording=<id>` opens.
-- For local file uploads: show a subtle banner "Restore your last session from <filename> (<time ago>)? [Restore] [Discard]" — we can't reattach the File object, but the transcript + settings alone save 5–10 min.
-- Add a "Reset session" button in the header of the Cutter card, and auto-clear when the pipeline completes with `mode === "full"`.
+## Behaviour when Advanced is hidden
 
-**Why users notice:** the first accidental refresh they survive without losing 30 cues of hand-edited transcript positions will make them love the app.
+Defaults stay exactly as they are today, so hiding the UI doesn't change any output:
+- `mode = "full"` — the "Cut selected" button already ignores the segment editor and uses the picked cues (`runCutSelected` path around line 1141), so the segment array being untouched is fine.
+- `burnIn = true`
+- `lowPerf = false` (auto `perf.lowPerf` still applies via `effLowPerf`)
+- `maxSentences = 2`, `maxChars = 90`, `audioOffsetSec = 0`
 
----
+The "Run" button that consumes the segment editor stays reachable only when Advanced is open, which matches its actual use.
 
-## 3. Recordings: multi-select, search, and "Merge & Cut"
+## Small visual cue that Advanced exists
 
-**Today:** Each 5-minute chunk is its own row with individual buttons. To work on a 20-minute segment spanning 4 chunks you have to download each, stitch them manually, and re-upload. There's no filter, so scrolling past weeks of sessions is painful.
+A muted one-liner under the disclosure trigger: *"Segment editor, mode, burn-in, performance, sync"*. Users who need it will find it; users who don't get a much calmer page.
 
-**Change:**
-- **Search bar** at the top: filters by title, date, or transcript text (transcript is already stored on the row).
-- **Row checkboxes** + a sticky action bar when >0 selected: `Cut merged`, `Download all`, `Delete`.
-- **Cut merged**: client-side concatenates the selected `.ts`/`.mp4` chunks (using existing `cutAndConcat` with full ranges), then routes to `/` with the merged blob in memory (via a shared session store) so the Cutter opens with the stitched clip ready. Preserves merged transcript (concatenated with correctly shifted timestamps) if all selected chunks have transcripts.
-- **"Select whole session" chip** on each session card header.
+## Files touched (UI-only, no logic changes)
 
-**Why users notice:** the Chamber TV workflow *is* multi-chunk. This turns a 15-minute manual chore into two clicks.
+- `src/routes/index.tsx`
+  - Wrap the current "2. Cut & options" `Card` (mode Tabs + segment editor block) in a `<Collapsible>` under an Advanced trigger.
+  - Move the two `Switch` rows (`burn`, `lowperf`), the audio-offset slider + `SyncCalibrator`, `PerfSelector`, and the `maxSentences` / `maxChars` inputs into the same Advanced Collapsible (keep subtitle position/size/outline in the main "Subtitle look" card).
+  - Remove the numbered `2.` heading; renumber the remaining section labels or drop the numbering entirely (numbering implies a required order that no longer exists).
+- No changes to state, defaults, or the pipeline functions. `mode`, `burnIn`, `lowPerf`, `segments`, etc. keep their current defaults so behaviour is identical for a user who never opens Advanced.
 
----
+## Explicitly not doing
 
-## Technical notes
-
-- New files:
-  - `src/lib/session/cutterSession.ts` — IndexedDB (via `idb-keyval`) get/set/clear for cutter state; add `bun add idb-keyval`.
-  - `src/components/cutter/LiveSubtitleOverlay.tsx` — wraps the source `<video>`, renders the active cue, handles pointer-drag → `onChange(x,y)`.
-  - `src/lib/recordings/mergeChunks.ts` — orders selected rows by `session_date` + `chunk_index`, downloads via existing signed URLs, calls `cutAndConcat` with each chunk's full range, returns a single `Blob` + merged transcript.
-  - `src/lib/session/pendingSource.ts` — in-memory (module-scope Map) hand-off of a Blob + optional cues from Recordings to Cutter, keyed by a UUID passed in `?pending=<id>` search param.
-- Edits:
-  - `src/routes/index.tsx`: replace `SubtitlePreview` inside the video-preview area with `LiveSubtitleOverlay` when a `sourcePreviewUrl` exists (keep `SubtitlePreview` when no source); add auto-save `useEffect`s and restore-banner UI; read `?pending=<id>` and hydrate `file` from `pendingSource`.
-  - `src/routes/recordings.tsx`: add `search` state + filter, row `Checkbox`, sticky bulk-action bar, `Cut merged` handler that builds the blob + stores it via `pendingSource.set()` then `navigate({ to: "/", search: { pending } })`.
-  - Extend `indexSearchSchema` in `src/routes/index.tsx` with `pending: z.string().uuid().optional()`.
-- No backend/DB changes. No new secrets. No changes to Studio, worker, or ffmpeg operations themselves — this is UI + state persistence + a small merge helper.
-
----
-
-## What I'm NOT doing (kept out on purpose)
-
-- No redesign of the header, colors, or typography — the goal is workflow wins, not repaint.
-- No Studio changes.
-- No new backend features, migrations, or edge functions.
-- No changes to LuxASR, ffmpeg pipeline, or lip-sync — those stay untouched.
+- Not deleting any feature — every hidden control is still reachable in one click.
+- No changes to Recordings, Premiere, Studio, worker, ffmpeg, or LuxASR.
+- No visual redesign beyond the disclosure — same colors, same components.

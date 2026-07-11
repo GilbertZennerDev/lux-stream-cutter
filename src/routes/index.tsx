@@ -23,7 +23,10 @@ import {
   Flame,
   Play,
   X,
+  ChevronDown,
 } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -520,6 +523,7 @@ function Dashboard() {
   const [maxHeight, setMaxHeight] = useState<0 | 480 | 720 | 1080>(0);
   const [audioOffsetSec, setAudioOffsetSec] = useState(0);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const perfState = usePerfTier();
   const perf = perfState.profile;
@@ -1622,261 +1626,293 @@ function Dashboard() {
             </CardContent>
           </Card>
 
+          {/* Subtitle look — always visible. Font size, position, outline,
+              and the live overlay on the real source frame. */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">2. Cut &amp; options</CardTitle>
+              <CardTitle className="text-base">Subtitle look</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
-                <TabsList className="grid grid-cols-3 w-full">
-                  <TabsTrigger value="full">Full pipeline</TabsTrigger>
-                  <TabsTrigger value="cut-only">Just cut</TabsTrigger>
-                  <TabsTrigger value="subs-only">Subs only</TabsTrigger>
-                </TabsList>
-                <TabsContent value="full" className="text-xs text-muted-foreground pt-2">
-                  Cut → audio → LuxASR → SRT → shorten → burn-in.
-                </TabsContent>
-                <TabsContent value="cut-only" className="text-xs text-muted-foreground pt-2">
-                  Only trim the video. No subtitles.
-                </TabsContent>
-                <TabsContent value="subs-only" className="text-xs text-muted-foreground pt-2">
-                  Skip cutting. Transcribe the whole uploaded clip.
-                </TabsContent>
-              </Tabs>
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label>Font size</Label>
+                  <span className="text-xs text-muted-foreground">{fontSize}px</span>
+                </div>
+                <Slider min={14} max={64} step={1} value={[fontSize]} onValueChange={(v) => setFontSize(v[0])} />
+              </div>
 
-              {mode !== "subs-only" && (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-1 flex-wrap">
-                    {segments.map((_, i) => (
-                      <div key={i} className="flex items-center">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={i === activeSeg ? "default" : "outline"}
-                          className="h-7 rounded-r-none"
-                          onClick={() => setActiveSeg(i)}
-                        >
-                          Segment {i + 1}
-                        </Button>
-                        {segments.length > 1 && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={i === activeSeg ? "default" : "outline"}
-                            className="h-7 rounded-l-none border-l-0 px-2"
-                            onClick={() => removeSeg(i)}
-                            title="Remove segment"
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                    <Button type="button" size="sm" variant="ghost" className="h-7" onClick={addSeg}>
-                      + Add segment
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="start">Start</Label>
-                      <Input
-                        id="start"
-                        value={segments[activeSeg].start}
-                        onChange={(e) => updateSeg(activeSeg, { start: e.target.value })}
-                        placeholder="MM:SS or HH:MM:SS"
-                      />
-                      {sourcePreviewUrl && (
-                        <div className="space-y-1">
-                          <video
-                            ref={startVideoRef}
-                            src={sourcePreviewUrl}
-                            className="w-full rounded-md border bg-black aspect-video"
-                            controls
-                            muted
-                            preload="metadata"
-                            onLoadedMetadata={() => seekTo(startVideoRef, segments[activeSeg].start)}
-                          />
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="w-full h-7 text-xs"
-                            onClick={() => seekTo(startVideoRef, segments[activeSeg].start)}
-                          >
-                            <Play className="h-3 w-3 mr-1" /> Preview start
-                          </Button>
-                        </div>
-                      )}
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label>Subtitle position &amp; outline</Label>
+                  <span className="text-xs text-muted-foreground">
+                    x {subX}% · y {subY}% · outline {subOutline}px
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-2">
+                  {sourcePreviewUrl
+                    ? "Play the video and drag the caption directly on the real frame — what you see is what gets burned in."
+                    : "Zeih den Text am Preview, oder benotz d'Sliders. Iwwerholl gëtt op déi geschnidde Videosgréisst berechent."}
+                </p>
+                {sourcePreviewUrl ? (
+                  <LiveSubtitleOverlay
+                    src={sourcePreviewUrl}
+                    xPct={subX}
+                    yPct={subY}
+                    fontSize={fontSize}
+                    outline={subOutline}
+                    cues={cues.length > 0 ? cues : undefined}
+                    onChange={(x, y) => {
+                      setSubX(x);
+                      setSubY(y);
+                    }}
+                  />
+                ) : (
+                  <SubtitlePreview
+                    xPct={subX}
+                    yPct={subY}
+                    fontSize={fontSize}
+                    outline={subOutline}
+                    onChange={(x, y) => {
+                      setSubX(x);
+                      setSubY(y);
+                    }}
+                  />
+                )}
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Horizontal (X)</Label>
+                      <span className="text-xs text-muted-foreground">{subX}%</span>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="end">End</Label>
-                      <Input
-                        id="end"
-                        value={segments[activeSeg].end}
-                        onChange={(e) => updateSeg(activeSeg, { end: e.target.value })}
-                        placeholder="MM:SS or HH:MM:SS"
-                      />
-                      {sourcePreviewUrl && (
-                        <div className="space-y-1">
-                          <video
-                            ref={endVideoRef}
-                            src={sourcePreviewUrl}
-                            className="w-full rounded-md border bg-black aspect-video"
-                            controls
-                            muted
-                            preload="metadata"
-                            onLoadedMetadata={() => seekTo(endVideoRef, segments[activeSeg].end)}
-                          />
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="w-full h-7 text-xs"
-                            onClick={() => seekTo(endVideoRef, segments[activeSeg].end)}
-                          >
-                            <Play className="h-3 w-3 mr-1" /> Preview end
-                          </Button>
-                        </div>
-                      )}
-                    </div>
+                    <Slider min={0} max={100} step={1} value={[subX]} onValueChange={(v) => setSubX(v[0])} />
                   </div>
-
-                  {segments.length > 1 && (
-                    <ul className="text-xs font-mono border rounded-md divide-y">
-                      {segments.map((s, i) => (
-                        <li
-                          key={i}
-                          className={
-                            "px-2 py-1 flex justify-between cursor-pointer " +
-                            (i === activeSeg ? "bg-muted" : "hover:bg-muted/40")
-                          }
-                          onClick={() => setActiveSeg(i)}
-                        >
-                          <span>#{i + 1}</span>
-                          <span>
-                            {s.start} → {s.end}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  <div className="text-xs">
-                    {durationInfo.ok ? (
-                      <span className="text-muted-foreground">
-                        Total duration ({segments.length} segment{segments.length === 1 ? "" : "s"}):{" "}
-                        <span className="font-mono">{durationInfo.label}</span>
-                      </span>
-                    ) : (
-                      <span className="text-destructive">{durationInfo.msg}</span>
-                    )}
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Vertikal (Y)</Label>
+                      <span className="text-xs text-muted-foreground">{subY}%</span>
+                    </div>
+                    <Slider min={0} max={100} step={1} value={[subY]} onValueChange={(v) => setSubY(v[0])} />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Schwaarze Bord (Outline)</Label>
+                      <span className="text-xs text-muted-foreground">{subOutline}px</span>
+                    </div>
+                    <Slider
+                      min={0}
+                      max={8}
+                      step={1}
+                      value={[subOutline]}
+                      onValueChange={(v) => setSubOutline(v[0])}
+                    />
                   </div>
                 </div>
-              )}
+              </div>
+            </CardContent>
+          </Card>
 
-              {mode !== "cut-only" && (
-                <div className="space-y-4 pt-1">
+          {/* Advanced — collapsed by default. Holds the power-user controls
+              (mode tabs, segment editor, burn/low-perf switches, audio-sync,
+              output resolution, and the segment-driven Run button). The
+              day-to-day flow lives in the transcript list ("Cut selected")
+              and doesn't need any of this. */}
+          <Card>
+            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/40 rounded-t-lg transition-colors"
+                >
                   <div>
-                    <div className="flex items-center justify-between">
-                      <Label>Font size</Label>
-                      <span className="text-xs text-muted-foreground">{fontSize}px</span>
+                    <div className="text-base font-semibold">Advanced</div>
+                    <div className="text-xs text-muted-foreground">
+                      Segment editor, mode, burn-in, performance, sync
                     </div>
-                    <Slider min={14} max={64} step={1} value={[fontSize]} onValueChange={(v) => setFontSize(v[0])} />
                   </div>
+                  <ChevronDown
+                    className={cn("h-4 w-4 shrink-0 transition-transform", advancedOpen && "rotate-180")}
+                  />
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="space-y-4 pt-0">
+                  <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
+                    <TabsList className="grid grid-cols-3 w-full">
+                      <TabsTrigger value="full">Full pipeline</TabsTrigger>
+                      <TabsTrigger value="cut-only">Just cut</TabsTrigger>
+                      <TabsTrigger value="subs-only">Subs only</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="full" className="text-xs text-muted-foreground pt-2">
+                      Cut → audio → LuxASR → SRT → shorten → burn-in.
+                    </TabsContent>
+                    <TabsContent value="cut-only" className="text-xs text-muted-foreground pt-2">
+                      Only trim the video. No subtitles.
+                    </TabsContent>
+                    <TabsContent value="subs-only" className="text-xs text-muted-foreground pt-2">
+                      Skip cutting. Transcribe the whole uploaded clip.
+                    </TabsContent>
+                  </Tabs>
 
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <Label>Subtitle position &amp; outline</Label>
-                      <span className="text-xs text-muted-foreground">
-                        x {subX}% · y {subY}% · outline {subOutline}px
-                      </span>
+                  {mode !== "subs-only" && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {segments.map((_, i) => (
+                          <div key={i} className="flex items-center">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={i === activeSeg ? "default" : "outline"}
+                              className="h-7 rounded-r-none"
+                              onClick={() => setActiveSeg(i)}
+                            >
+                              Segment {i + 1}
+                            </Button>
+                            {segments.length > 1 && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={i === activeSeg ? "default" : "outline"}
+                                className="h-7 rounded-l-none border-l-0 px-2"
+                                onClick={() => removeSeg(i)}
+                                title="Remove segment"
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                        <Button type="button" size="sm" variant="ghost" className="h-7" onClick={addSeg}>
+                          + Add segment
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="start">Start</Label>
+                          <Input
+                            id="start"
+                            value={segments[activeSeg].start}
+                            onChange={(e) => updateSeg(activeSeg, { start: e.target.value })}
+                            placeholder="MM:SS or HH:MM:SS"
+                          />
+                          {sourcePreviewUrl && (
+                            <div className="space-y-1">
+                              <video
+                                ref={startVideoRef}
+                                src={sourcePreviewUrl}
+                                className="w-full rounded-md border bg-black aspect-video"
+                                controls
+                                muted
+                                preload="metadata"
+                                onLoadedMetadata={() => seekTo(startVideoRef, segments[activeSeg].start)}
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="w-full h-7 text-xs"
+                                onClick={() => seekTo(startVideoRef, segments[activeSeg].start)}
+                              >
+                                <Play className="h-3 w-3 mr-1" /> Preview start
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="end">End</Label>
+                          <Input
+                            id="end"
+                            value={segments[activeSeg].end}
+                            onChange={(e) => updateSeg(activeSeg, { end: e.target.value })}
+                            placeholder="MM:SS or HH:MM:SS"
+                          />
+                          {sourcePreviewUrl && (
+                            <div className="space-y-1">
+                              <video
+                                ref={endVideoRef}
+                                src={sourcePreviewUrl}
+                                className="w-full rounded-md border bg-black aspect-video"
+                                controls
+                                muted
+                                preload="metadata"
+                                onLoadedMetadata={() => seekTo(endVideoRef, segments[activeSeg].end)}
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="w-full h-7 text-xs"
+                                onClick={() => seekTo(endVideoRef, segments[activeSeg].end)}
+                              >
+                                <Play className="h-3 w-3 mr-1" /> Preview end
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {segments.length > 1 && (
+                        <ul className="text-xs font-mono border rounded-md divide-y">
+                          {segments.map((s, i) => (
+                            <li
+                              key={i}
+                              className={
+                                "px-2 py-1 flex justify-between cursor-pointer " +
+                                (i === activeSeg ? "bg-muted" : "hover:bg-muted/40")
+                              }
+                              onClick={() => setActiveSeg(i)}
+                            >
+                              <span>#{i + 1}</span>
+                              <span>
+                                {s.start} → {s.end}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      <div className="text-xs">
+                        {durationInfo.ok ? (
+                          <span className="text-muted-foreground">
+                            Total duration ({segments.length} segment{segments.length === 1 ? "" : "s"}):{" "}
+                            <span className="font-mono">{durationInfo.label}</span>
+                          </span>
+                        ) : (
+                          <span className="text-destructive">{durationInfo.msg}</span>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      {sourcePreviewUrl
-                        ? "Play the video and drag the caption directly on the real frame — what you see is what gets burned in."
-                        : "Zeih den Text am Preview, oder benotz d'Sliders. Iwwerholl gëtt op déi geschnidde Videosgréisst berechent."}
-                    </p>
-                    {sourcePreviewUrl ? (
-                      <LiveSubtitleOverlay
-                        src={sourcePreviewUrl}
-                        xPct={subX}
-                        yPct={subY}
-                        fontSize={fontSize}
-                        outline={subOutline}
-                        cues={cues.length > 0 ? cues : undefined}
-                        onChange={(x, y) => {
-                          setSubX(x);
-                          setSubY(y);
-                        }}
-                      />
-                    ) : (
-                      <SubtitlePreview
-                        xPct={subX}
-                        yPct={subY}
-                        fontSize={fontSize}
-                        outline={subOutline}
-                        onChange={(x, y) => {
-                          setSubX(x);
-                          setSubY(y);
-                        }}
-                      />
-                    )}
-                    <div className="mt-3 space-y-3">
+                  )}
+
+                  {mode !== "cut-only" && (
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs">Horizontal (X)</Label>
-                          <span className="text-xs text-muted-foreground">{subX}%</span>
-                        </div>
-                        <Slider min={0} max={100} step={1} value={[subX]} onValueChange={(v) => setSubX(v[0])} />
+                        <Label htmlFor="maxSent">Max sentences / cue</Label>
+                        <Input
+                          id="maxSent"
+                          type="number"
+                          min={1}
+                          max={5}
+                          value={maxSentences}
+                          onChange={(e) => setMaxSentences(Math.max(1, Number(e.target.value) || 1))}
+                        />
                       </div>
                       <div>
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs">Vertikal (Y)</Label>
-                          <span className="text-xs text-muted-foreground">{subY}%</span>
-                        </div>
-                        <Slider min={0} max={100} step={1} value={[subY]} onValueChange={(v) => setSubY(v[0])} />
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs">Schwaarze Bord (Outline)</Label>
-                          <span className="text-xs text-muted-foreground">{subOutline}px</span>
-                        </div>
-                        <Slider
-                          min={0}
-                          max={8}
-                          step={1}
-                          value={[subOutline]}
-                          onValueChange={(v) => setSubOutline(v[0])}
+                        <Label htmlFor="maxChars">Max chars / cue</Label>
+                        <Input
+                          id="maxChars"
+                          type="number"
+                          min={30}
+                          max={200}
+                          value={maxChars}
+                          onChange={(e) => setMaxChars(Math.max(30, Number(e.target.value) || 30))}
                         />
                       </div>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="maxSent">Max sentences / cue</Label>
-                      <Input
-                        id="maxSent"
-                        type="number"
-                        min={1}
-                        max={5}
-                        value={maxSentences}
-                        onChange={(e) => setMaxSentences(Math.max(1, Number(e.target.value) || 1))}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="maxChars">Max chars / cue</Label>
-                      <Input
-                        id="maxChars"
-                        type="number"
-                        min={30}
-                        max={200}
-                        value={maxChars}
-                        onChange={(e) => setMaxChars(Math.max(30, Number(e.target.value) || 30))}
-                      />
-                    </div>
-                  </div>
+                  )}
+
                   <PerfSelector state={perfState} />
+
                   <div className="flex items-center justify-between">
                     <div>
                       <Label htmlFor="burn">Burn subtitles into video</Label>
@@ -1893,6 +1929,7 @@ function Dashboard() {
                     </div>
                     <Switch id="lowperf" checked={lowPerf} onCheckedChange={setLowPerf} />
                   </div>
+
                   <div>
                     <Label htmlFor="audio-offset">Audio sync offset (seconds)</Label>
                     <p className="text-xs text-muted-foreground mb-2">
@@ -1940,7 +1977,6 @@ function Dashboard() {
 
                   <div>
                     <Label>Output resolution</Label>
-
                     <p className="text-xs text-muted-foreground mb-2">
                       Kleiner = deutlich schneller beim Burn-in. Auch im Low-perf Modus wählbar.
                     </p>
@@ -1963,36 +1999,39 @@ function Dashboard() {
                       ))}
                     </div>
                   </div>
-                </div>
-              )}
 
-              <div className="flex gap-2">
-                <Button onClick={run} disabled={!canRun} className="flex-1" size="lg">
-                  {isRunning ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running…
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 mr-2" /> Run
-                    </>
-                  )}
-                </Button>
-                {isRunning && (
-                  <Button onClick={cancel} variant="destructive" size="lg">
-                    <X className="h-4 w-4 mr-2" /> Cancel
-                  </Button>
-                )}
-              </div>
+                  <div className="flex gap-2">
+                    <Button onClick={run} disabled={!canRun} className="flex-1" size="lg">
+                      {isRunning ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running…
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-4 w-4 mr-2" /> Run
+                        </>
+                      )}
+                    </Button>
+                    {isRunning && (
+                      <Button onClick={cancel} variant="destructive" size="lg">
+                        <X className="h-4 w-4 mr-2" /> Cancel
+                      </Button>
+                    )}
+                  </div>
 
-              {error && (
-                <Alert variant="destructive">
-                  <AlertTitle>Pipeline failed</AlertTitle>
-                  <AlertDescription className="break-words text-xs">{error}</AlertDescription>
-                </Alert>
-              )}
-            </CardContent>
+                </CardContent>
+              </CollapsibleContent>
+            </Collapsible>
           </Card>
+
+          {/* Errors from any pipeline path surface here so they remain
+              visible even when Advanced is collapsed. */}
+          {error && (
+            <Alert variant="destructive">
+              <AlertTitle>Pipeline failed</AlertTitle>
+              <AlertDescription className="break-words text-xs">{error}</AlertDescription>
+            </Alert>
+          )}
         </div>
 
         {/* RIGHT: Progress + outputs */}
