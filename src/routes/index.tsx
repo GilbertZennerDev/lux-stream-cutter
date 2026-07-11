@@ -1560,6 +1560,17 @@ function Dashboard() {
                                 >
                                   End ◂
                                 </Button>
+                                {sourcePreviewUrl && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-2 text-[11px]"
+                                    title="Open big position editor"
+                                    onClick={() => setEditorCueIdx(c.index)}
+                                  >
+                                    <Maximize2 className="h-3 w-3 mr-1" /> Edit
+                                  </Button>
+                                )}
                               </div>
                             </div>
                             <Textarea
