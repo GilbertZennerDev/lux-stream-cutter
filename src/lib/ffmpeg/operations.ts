@@ -347,8 +347,7 @@ interface InstalledFontFile {
 
 /**
  * Fetch font files into ffmpeg's /fonts dir. Idempotent per exact file.
- * Always installs the Noto Sans fallback so there is a guaranteed usable face,
- * and returns the actual uploaded font path for direct drawtext fallback.
+ * Always installs the Noto Sans fallback so there is a guaranteed usable face.
  */
 async function ensureFont(
   ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>,
