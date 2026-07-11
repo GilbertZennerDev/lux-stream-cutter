@@ -730,18 +730,8 @@ export async function burnSubtitles(
   const subsName = `subs_${token}.ass`;
   const outputName = `burned_${token}.mp4`;
   const burnFont = fontOverride && isBurnCompatibleFont(fontOverride.format) ? fontOverride : undefined;
-  await ensureFont(ffmpeg, burnFont);
+  const installedFont = await ensureFont(ffmpeg, burnFont);
   await ffmpeg.writeFile(inputName, await fetchFile(video));
-  await ffmpeg.writeFile(subsName, new TextEncoder().encode(assText));
-  const sf = scaleFilter(perf);
-  // Use the `subtitles` filter with explicit `filename=` so the positional
-  // arg parser can't misinterpret the path, and `force_style=FontName=<family>`
-  // to reassert the font at filter time — a defence in depth against libass
-  // failing to match the ASS header Fontname against the /fonts directory.
-  const forcedFamily = sanitizeAssFontFamily(burnFont?.family ?? DEFAULT_FONT_FAMILY);
-  const subsFilter = subtitleFilter(subsName, forcedFamily);
-  const filters = ["setpts=PTS-STARTPTS", sf, subsFilter].filter(Boolean);
-  const vf = filters.join(",");
 
   // Capture ffmpeg logs during the burn so libass warnings ("Font 'X' not
   // found", "Could not open font", etc.) surface in the Cutter's log panel.
@@ -754,23 +744,60 @@ export async function burnSubtitles(
 
 
   try {
+    const runBurn = async (vf: string) => {
+      try { await ffmpeg.deleteFile(outputName); } catch {}
+      await ffmpeg.exec([
+        "-i", inputName,
+        "-vf", vf,
+        ...encodeArgs(perf),
+        "-c:a", "aac", "-b:a", perf.lowPerf ? "96k" : "128k",
+        ...threadArgs(perf),
+        "-avoid_negative_ts", "make_zero",
+        "-movflags", "+faststart",
+        "-y", outputName,
+      ]);
+      return await readOutputFile(ffmpeg, outputName, "Subtitle burn-in");
+    };
+
     // NOTE: Do NOT combine `-map 0:v:0` with `-vf` here. When the video
     // stream is explicitly mapped, ffmpeg.wasm's simple-filter (`-vf`) path
     // can be bypassed and the video passes through un-filtered — the output
     // renders without any burned subtitles. Rely on default stream
     // selection (best video + best audio) so `-vf` is applied correctly.
-    await ffmpeg.exec([
-      "-i", inputName,
-      "-vf", vf,
-      ...encodeArgs(perf),
-      "-c:a", "aac", "-b:a", perf.lowPerf ? "96k" : "128k",
-      ...threadArgs(perf),
-      "-avoid_negative_ts", "make_zero",
-      "-movflags", "+faststart",
-      "-y", outputName,
-    ]);
 
-    return await readOutputFile(ffmpeg, outputName, "Subtitle burn-in");
+    // For uploaded .otf/.ttf files, first bypass libass font discovery
+    // entirely and render with drawtext's direct `fontfile=`. This fixes fonts
+    // like Whitney Book whose internal family names differ from the UI label.
+    const directFontPath = installedFont.override?.path;
+    const directVf = directFontPath ? directFontDrawtextChain(assText, directFontPath, perf) : null;
+    if (directVf) {
+      try {
+        return await runBurn(directVf);
+      } catch {
+        // Some ffmpeg.wasm builds omit drawtext/freetype. Fall back to libass
+        // below, using every internal name parsed from the uploaded font file.
+      }
+    }
+
+    const sf = scaleFilter(perf);
+    const candidateFamilies = await fontNameCandidates(
+      installedFont.override?.bytes,
+      burnFont?.family ?? DEFAULT_FONT_FAMILY,
+    );
+    const fallbacks = installedFont.override ? [...candidateFamilies, DEFAULT_FONT_FAMILY] : [DEFAULT_FONT_FAMILY];
+    let lastError: unknown = null;
+    for (const family of uniqueStrings(fallbacks)) {
+      const safeAss = replaceAssFontFamily(assText, family);
+      await ffmpeg.writeFile(subsName, new TextEncoder().encode(safeAss));
+      const subsFilter = subtitleFilter(subsName, family);
+      const vf = ["setpts=PTS-STARTPTS", sf, subsFilter].filter(Boolean).join(",");
+      try {
+        return await runBurn(vf);
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError ?? new Error("Subtitle burn-in failed");
   } catch (err) {
     // Attach the last few libass/ffmpeg log lines to the error so the UI
     // shows *why* the burn failed instead of a bare "exited with code 1".
