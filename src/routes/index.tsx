@@ -66,7 +66,7 @@ import { LiveSubtitleOverlay } from "@/components/cutter/LiveSubtitleOverlay";
 import { CuePreview } from "@/components/cutter/CuePreview";
 import { CuePositionDialog } from "@/components/cutter/CuePositionDialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Maximize2, LockKeyhole, MoveHorizontal, MoveVertical, SplitSquareHorizontal } from "lucide-react";
+import { Maximize2, LockKeyhole, MoveHorizontal, MoveVertical, SplitSquareHorizontal, Merge } from "lucide-react";
 import { SyncCalibrator } from "@/components/cutter/SyncCalibrator";
 import { PerfSelector } from "@/components/cutter/PerfSelector";
 import { usePerfTier } from "@/lib/perf/usePerfTier";
@@ -627,6 +627,36 @@ function Dashboard() {
         } else {
           out.push(c);
         }
+      }
+      setSrtText(cuesToSrt(out));
+      return out;
+    });
+
+  /**
+   * Merge a cue with the one directly above it. Text is joined with a
+   * newline, timing spans from the previous cue's start to this cue's end,
+   * subsequent cues are re-indexed. The merged cue inherits the previous
+   * cue's position override (that's the one visible before the split).
+   */
+  const joinWithPrevious = (idx: number) =>
+    setCues((prev) => {
+      const pos = prev.findIndex((c) => c.index === idx);
+      if (pos <= 0) return prev;
+      const above = prev[pos - 1];
+      const curr = prev[pos];
+      const mergedText = [above.text.trim(), curr.text.trim()].filter(Boolean).join("\n");
+      const merged: SrtCue = {
+        ...above,
+        text: mergedText,
+        start: above.start,
+        end: curr.end,
+      };
+      const out: SrtCue[] = [];
+      for (let i = 0; i < prev.length; i++) {
+        if (i === pos - 1) out.push(merged);
+        else if (i === pos) continue;
+        else if (i > pos) out.push({ ...prev[i], index: prev[i].index - 1 });
+        else out.push(prev[i]);
       }
       setSrtText(cuesToSrt(out));
       return out;
@@ -1622,6 +1652,16 @@ function Dashboard() {
                                   onClick={() => setEndFromSeconds(c.end)}
                                 >
                                   End ◂
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-[11px]"
+                                  title="Merge with block above (undo split)"
+                                  disabled={cues[0]?.index === c.index}
+                                  onClick={() => joinWithPrevious(c.index)}
+                                >
+                                  <Merge className="h-3 w-3 mr-1" /> Join ↑
                                 </Button>
                                 <Button
                                   size="sm"
