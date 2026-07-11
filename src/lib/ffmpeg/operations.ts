@@ -622,6 +622,10 @@ function fontSelectLogs(logs: string[]): string[] {
   return logs.filter((line) => /fontselect|font selection|select.*font/i.test(line));
 }
 
+function compactFontName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
 function logsMatchFontCandidate(
   logs: string[],
   candidate: FontCandidate,
@@ -634,10 +638,17 @@ function logsMatchFontCandidate(
 
   const customFile = filenameFromPath(override.path).toLowerCase();
   const customStem = customFile.replace(/\.[^.]+$/, "");
+  const compactCustomStem = compactFontName(customStem);
+  const compactCandidate = compactFontName(candidate.family);
   return lines.some((line) => {
     const lower = line.toLowerCase();
+    const compactLine = compactFontName(line);
     if (lower.includes("notosans") || lower.includes("noto sans")) return false;
-    return lower.includes(customFile) || lower.includes(customStem) || /->\s*\/fonts\//i.test(line);
+    return lower.includes(customFile) ||
+      lower.includes(customStem) ||
+      (!!compactCustomStem && compactLine.includes(compactCustomStem)) ||
+      (!!compactCandidate && compactLine.includes(compactCandidate)) ||
+      /->\s*\/fonts\//i.test(line);
   });
 }
 
