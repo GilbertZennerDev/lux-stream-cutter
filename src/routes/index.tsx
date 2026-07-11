@@ -1673,10 +1673,12 @@ function Dashboard() {
                     fontSize={fontSize}
                     outline={subOutline}
                     cues={cues.length > 0 ? cues : undefined}
+                    lockAxis={lockAxis}
                     onChange={(x, y) => {
                       setSubX(x);
                       setSubY(y);
                     }}
+                    onCueChange={(idx, patch) => updateCuePos(idx, patch)}
                   />
                 ) : (
                   <SubtitlePreview
@@ -1690,6 +1692,28 @@ function Dashboard() {
                     }}
                   />
                 )}
+                <div className="mt-3 flex items-center gap-2">
+                  <Label className="text-xs">Lock drag axis</Label>
+                  <ToggleGroup
+                    type="single"
+                    size="sm"
+                    value={lockAxis}
+                    onValueChange={(v) => v && setLockAxis(v as "free" | "x" | "y")}
+                  >
+                    <ToggleGroupItem value="free" aria-label="Free">
+                      <LockKeyhole className="h-3 w-3 mr-1 opacity-40" /> Free
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="y" aria-label="Vertical only">
+                      <MoveVertical className="h-3 w-3 mr-1" /> Y only
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="x" aria-label="Horizontal only">
+                      <MoveHorizontal className="h-3 w-3 mr-1" /> X only
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                  <span className="text-[11px] text-muted-foreground ml-2">
+                    Restrict dragging so you only nudge one direction.
+                  </span>
+                </div>
                 <div className="mt-3 space-y-3">
                   <div>
                     <div className="flex items-center justify-between">
