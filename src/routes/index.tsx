@@ -1539,8 +1539,16 @@ function Dashboard() {
                                 {formatSeconds(c.start)} – {formatSeconds(c.end)}
                               </button>
                               {hasOverride && (
-                                <span className="text-[10px] font-mono px-1.5 rounded bg-primary/15 text-primary">
+                                <span className="text-[10px] font-mono px-1.5 rounded bg-primary/15 text-primary inline-flex items-center gap-1">
                                   pos {Math.round(cx)},{Math.round(cy)}
+                                  <button
+                                    type="button"
+                                    className="opacity-70 hover:opacity-100"
+                                    title="Reset to default position"
+                                    onClick={() => resetCuePos(c.index)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
                                 </span>
                               )}
                               <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
