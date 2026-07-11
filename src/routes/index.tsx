@@ -669,6 +669,68 @@ function Dashboard() {
       return out;
     });
 
+  /**
+   * Re-run LuxASR on a single cue's time range. Cuts the source video to
+   * [cue.start, cue.end], extracts audio, submits to LuxASR, and replaces
+   * the cue's text with the new transcription. Timings are preserved.
+   */
+  const retranscribeCue = async (idx: number) => {
+    const cue = cues.find((c) => c.index === idx);
+    if (!cue) return;
+    const source: Blob | null = sourcePreviewBlob ?? file;
+    if (!source) { toast.error("Load a source video first"); return; }
+    if (reasrIdx !== null) { toast.info("Another block is still transcribing"); return; }
+    setReasrIdx(idx);
+    const ac = new AbortController();
+    try {
+      appendLog(`[REASR] Block ${idx}: cutting ${formatSeconds(cue.start)}–${formatSeconds(cue.end)}`);
+      const clipBytes = await cutVideo(source, cue.start, cue.end, undefined, { lowPerf: effLowPerf });
+      const clipBlob = new Blob([clipBytes as BlobPart], { type: "video/mp4" });
+      appendLog(`[REASR] Block ${idx}: extracting audio`);
+      const audioBytes = await extractAudioSmart(clipBlob, () => {}, effLowPerf, perf.webcodecsAudio, appendLog);
+      const audio = new Blob([audioBytes as BlobPart], { type: "audio/mpeg" });
+      appendLog(`[REASR] Block ${idx}: uploading ${(audio.size / 1024).toFixed(0)} KB to LuxASR`);
+      const submitRes = await fetch("/api/asr", {
+        method: "POST",
+        headers: { "content-type": "audio/mpeg", "x-filename": `cue-${idx}.mp3` },
+        body: audio,
+        signal: ac.signal,
+      });
+      if (!submitRes.ok) {
+        const body = await submitRes.json().catch(() => ({ error: submitRes.statusText }));
+        throw new Error(`LuxASR: ${body.error ?? submitRes.statusText}`);
+      }
+      const { jobId } = (await submitRes.json()) as { jobId: string };
+      const startedAt = Date.now();
+      const MAX_MS = 5 * 60 * 1000;
+      let asrResult: unknown = null;
+      while (true) {
+        if (Date.now() - startedAt > MAX_MS) throw new Error("LuxASR timed out (5 min)");
+        await new Promise((r) => setTimeout(r, 2000));
+        const pollRes = await fetch(`/api/asr?jobId=${encodeURIComponent(jobId)}`, { signal: ac.signal });
+        if (!pollRes.ok) {
+          const body = await pollRes.json().catch(() => ({ error: pollRes.statusText }));
+          throw new Error(`LuxASR: ${body.error ?? pollRes.statusText}`);
+        }
+        const p = (await pollRes.json()) as { status: string; result?: unknown };
+        if (p.status === "completed") { asrResult = p.result; break; }
+      }
+      const raw = luxasrJsonToCues(asrResult);
+      const newText = raw.map((r) => r.text.trim()).filter(Boolean).join(" ").trim();
+      if (!newText) throw new Error("LuxASR returned no text for this range");
+      updateCueText(idx, newText);
+      appendLog(`[REASR] Block ${idx} updated`);
+      toast.success(`Block ${idx} re-transcribed`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      appendLog(`[REASR] Block ${idx} failed: ${message}`);
+      toast.error(message);
+    } finally {
+      setReasrIdx(null);
+    }
+  };
+
+
   // ----- Auto-save & restore ----------------------------------------------
   // Build a stable key for the current source so multiple in-flight projects
   // don't overwrite each other. Recordings are keyed by id; local files by
