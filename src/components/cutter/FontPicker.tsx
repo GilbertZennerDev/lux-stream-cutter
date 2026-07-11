@@ -106,6 +106,34 @@ export function FontPicker({ value, onChange, currentUserId }: Props) {
   const selected: FontRow | null =
     value ? fonts.find((f) => f.family === value && f.status === "ready") ?? null : null;
 
+  // Heal legacy rows whose stored family was filename-derived: fetch the file,
+  // re-parse, and rewrite the DB row if the real family differs. Runs once
+  // per font per session, only for TTF/OTF (opentype.js can't read WOFF).
+  useEffect(() => {
+    if (!selected || !selected.url) return;
+    if (selected.format !== "ttf" && selected.format !== "otf") return;
+    if (healedRef.current.has(selected.id)) return;
+    healedRef.current.add(selected.id);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(selected.url!);
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const { family, verified } = await detectFamily(blob, selected.originalFilename ?? "font", selected.format);
+        if (cancelled || !verified) return;
+        if (family === selected.family) return;
+        await renameFont({ data: { id: selected.id, family } });
+        await qc.invalidateQueries({ queryKey: ["fonts"] });
+        onChange(family);
+        toast.info(`Font family updated to "${family}" so the burn matches the preview.`);
+      } catch {
+        // best-effort — old row stays as-is
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selected, renameFont, qc, onChange]);
+
   const openPicker = () => fileInputRef.current?.click();
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
