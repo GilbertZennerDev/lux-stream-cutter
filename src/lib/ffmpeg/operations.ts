@@ -444,10 +444,13 @@ export function cuesToAss(cues: AssCue[], style: SubtitleStyle): string {
   const outline = Math.max(0, style.outline);
   const defaultX = Math.round((style.xPct / 100) * w);
   const defaultY = Math.round((style.yPct / 100) * h);
+  const fontFamily = style.fontFamily && style.fontFamily.trim().length > 0
+    ? style.fontFamily
+    : DEFAULT_FONT_FAMILY;
 
   // Alignment=5 => middle-center anchor, so \pos(x,y) places the centre of the text at (x,y).
   const styleLine =
-    `Style: Default,${FONT_FAMILY},${style.fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,` +
+    `Style: Default,${fontFamily},${style.fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,` +
     `1,0,0,0,100,100,0,0,1,${outline},0,5,0,0,0,1`;
 
   // Match the preview: captions in <CuePreview>/<LiveSubtitleOverlay> wrap
@@ -460,7 +463,7 @@ export function cuesToAss(cues: AssCue[], style: SubtitleStyle): string {
     .map((c) => {
       const px = typeof c.xPct === "number" ? Math.round((c.xPct / 100) * w) : defaultX;
       const py = typeof c.yPct === "number" ? Math.round((c.yPct / 100) * h) : defaultY;
-      const wrapped = wrapTextForAss(c.text, style.fontSize, maxWidthPx);
+      const wrapped = wrapTextForAss(c.text, style.fontSize, maxWidthPx, fontFamily);
       return `Dialogue: 0,${assTime(c.start)},${assTime(c.end)},Default,,0,0,0,,{\\pos(${px},${py})}${escapeAssText(wrapped)}`;
     })
     .join("\n");
