@@ -464,7 +464,7 @@ export function cuesToAss(cues: AssCue[], style: SubtitleStyle): string {
   const defaultX = Math.round((style.xPct / 100) * w);
   const defaultY = Math.round((style.yPct / 100) * h);
   const fontFamily = style.fontFamily && style.fontFamily.trim().length > 0
-    ? style.fontFamily
+    ? sanitizeAssFontFamily(style.fontFamily)
     : DEFAULT_FONT_FAMILY;
 
   // Alignment=5 => middle-center anchor, so \pos(x,y) places the centre of the text at (x,y).
@@ -512,6 +512,15 @@ export interface FontOverride {
   format: string;
 }
 
+function sanitizeAssFontFamily(family: string): string {
+  const cleaned = family
+    .replace(/[{},\\]/g, " ")
+    .replace(/,/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || DEFAULT_FONT_FAMILY;
+}
+
 export async function burnSubtitles(
   video: File | Blob,
   assText: string,
@@ -541,9 +550,10 @@ export async function burnSubtitles(
   // arg parser can't misinterpret the path, and `force_style=FontName=<family>`
   // to reassert the font at filter time — a defence in depth against libass
   // failing to match the ASS header Fontname against the /fonts directory.
-  const familyForForce = (fontOverride?.family ?? DEFAULT_FONT_FAMILY).replace(/'/g, "");
-  const subsFilter = `subtitles=filename=${subsName}:fontsdir=/fonts:force_style='FontName=${familyForForce}'`;
-  const vf = sf ? `${sf},${subsFilter}` : subsFilter;
+  const forcedFamily = sanitizeAssFontFamily(fontOverride?.family ?? DEFAULT_FONT_FAMILY);
+  const subsFilter = subtitleFilter(subsName, forcedFamily);
+  const filters = ["setpts=PTS-STARTPTS", sf, subsFilter].filter(Boolean);
+  const vf = filters.join(",");
 
   // Capture ffmpeg logs during the burn so libass warnings ("Font 'X' not
   // found", "Could not open font", etc.) surface in the Cutter's log panel.
@@ -567,6 +577,7 @@ export async function burnSubtitles(
       ...encodeArgs(perf),
       "-c:a", "aac", "-b:a", perf.lowPerf ? "96k" : "128k",
       ...threadArgs(perf),
+      "-avoid_negative_ts", "make_zero",
       "-movflags", "+faststart",
       "-y", outputName,
     ]);
