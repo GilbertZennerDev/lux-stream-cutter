@@ -1,5 +1,5 @@
 import { fetchFile } from "@ffmpeg/util";
-import { getFFmpeg, onProgress, type ProgressCb } from "./client";
+import { emitFfmpegLog, getFFmpeg, onProgress, type ProgressCb } from "./client";
 import { formatSeconds } from "../subtitles/parseTime";
 
 export interface PerfOptions {
@@ -105,10 +105,19 @@ function escapeFilterOption(value: string): string {
     .replace(/,/g, "\\,");
 }
 
-function subtitleFilter(subsName: string, fontFamily: string): string {
+interface FontCandidate {
+  family: string;
+  bold: boolean;
+  source: "uploaded" | "fallback";
+}
+
+function subtitleFilter(subsName: string, candidate: FontCandidate): string {
   const filename = escapeFilterOption(subsName);
-  const family = escapeFilterOption(fontFamily.trim() || DEFAULT_FONT_FAMILY);
-  return `subtitles=filename='${filename}':fontsdir='/fonts':force_style='FontName=${family}'`;
+  const forceStyle = [
+    `FontName=${candidate.family.trim() || DEFAULT_FONT_FAMILY}`,
+    `Bold=${candidate.bold ? 1 : 0}`,
+  ].join(",");
+  return `subtitles=filename='${filename}':fontsdir='/fonts':force_style='${escapeFilterOption(forceStyle)}'`;
 }
 
 /** Fast remux of an MPEG-TS blob into an MP4 container (no re-encode). */

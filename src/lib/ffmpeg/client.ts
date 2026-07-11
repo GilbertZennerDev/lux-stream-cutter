@@ -14,13 +14,18 @@ export function onFfmpegLog(cb: (msg: string) => void): () => void {
   return () => { logListeners.delete(cb); };
 }
 
+/** Emit an app-level processing log line through the same Cutter log stream. */
+export function emitFfmpegLog(msg: string): void {
+  for (const cb of logListeners) cb(msg);
+}
+
 
 export async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpegPromise) return ffmpegPromise;
   ffmpegPromise = (async () => {
     const ffmpeg = new FFmpeg();
     ffmpeg.on("log", ({ message }) => {
-      for (const cb of logListeners) cb(message);
+      emitFfmpegLog(message);
     });
 
     try {
