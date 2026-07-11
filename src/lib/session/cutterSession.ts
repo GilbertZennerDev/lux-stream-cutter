@@ -31,6 +31,8 @@ export interface CutterSessionState {
   audioOffsetSec: number;
   burnIn: boolean;
   lockAxis?: "free" | "x" | "y";
+  /** Selected custom font family (matches `fonts.family`); null = built-in. */
+  fontFamily?: string | null;
 }
 
 interface CachedBlob {
