@@ -632,6 +632,36 @@ function Dashboard() {
       return out;
     });
 
+  /**
+   * Merge a cue with the one directly above it. Text is joined with a
+   * newline, timing spans from the previous cue's start to this cue's end,
+   * subsequent cues are re-indexed. The merged cue inherits the previous
+   * cue's position override (that's the one visible before the split).
+   */
+  const joinWithPrevious = (idx: number) =>
+    setCues((prev) => {
+      const pos = prev.findIndex((c) => c.index === idx);
+      if (pos <= 0) return prev;
+      const above = prev[pos - 1];
+      const curr = prev[pos];
+      const mergedText = [above.text.trim(), curr.text.trim()].filter(Boolean).join("\n");
+      const merged: SrtCue = {
+        ...above,
+        text: mergedText,
+        start: above.start,
+        end: curr.end,
+      };
+      const out: SrtCue[] = [];
+      for (let i = 0; i < prev.length; i++) {
+        if (i === pos - 1) out.push(merged);
+        else if (i === pos) continue;
+        else if (i > pos) out.push({ ...prev[i], index: prev[i].index - 1 });
+        else out.push(prev[i]);
+      }
+      setSrtText(cuesToSrt(out));
+      return out;
+    });
+
   // ----- Auto-save & restore ----------------------------------------------
   // Build a stable key for the current source so multiple in-flight projects
   // don't overwrite each other. Recordings are keyed by id; local files by
