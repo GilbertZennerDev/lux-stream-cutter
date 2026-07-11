@@ -109,7 +109,7 @@ export function CuePreview({
   };
 
   // Scale ASS px → preview px, mirroring LiveSubtitleOverlay.
-  const scale = boxWidth / 1280;
+  const scale = boxWidth / Math.max(1, videoWidth);
   const previewFont = Math.max(8, Math.round(fontSize * scale));
   const previewOutline = Math.max(0, outline * scale);
   const shadow = previewOutline > 0
