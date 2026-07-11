@@ -598,6 +598,23 @@ function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey]);
 
+  // Cache the source file blob to IndexedDB so a refresh doesn't force a
+  // re-download (recordings) or lose the local upload reference. Recording
+  // blobs are cached inline during the load flow above; here we cover the
+  // local-file / merged-blob / pending-source paths.
+  useEffect(() => {
+    if (!sessionKey || !file) return;
+    if (sessionKey.startsWith("rec:")) return; // handled in the recording effect
+    let cancelled = false;
+    (async () => {
+      if (await hasCutterBlob(sessionKey)) return;
+      if (cancelled) return;
+      await saveCutterBlob(sessionKey, file, file).catch(() => {});
+    })();
+    return () => { cancelled = true; };
+  }, [sessionKey, file]);
+
+
   const applySavedSession = (saved: Awaited<ReturnType<typeof loadCutterSession>>) => {
     if (!saved) return;
     if (saved.rawCues?.length) setRawCues(saved.rawCues);
