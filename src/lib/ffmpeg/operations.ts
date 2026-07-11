@@ -334,15 +334,21 @@ const DEFAULT_FONT_FAMILY = "Noto Sans";
 // on demand without re-writing the same file every call.
 const fontsInstalled = new WeakMap<object, Set<string>>();
 
+interface InstalledFontFile {
+  family: string;
+  path: string;
+  bytes: Uint8Array;
+}
+
 /**
- * Fetch font files into ffmpeg's /fonts dir. Idempotent per instance/family.
- * Always installs the Noto Sans fallback so libass has a guaranteed usable
- * face even when a custom override can't be matched by internal family name.
+ * Fetch font files into ffmpeg's /fonts dir. Idempotent per exact file.
+ * Always installs the Noto Sans fallback so there is a guaranteed usable face,
+ * and returns the actual uploaded font path for direct drawtext fallback.
  */
 async function ensureFont(
   ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>,
   override?: { family: string; url: string; format: string },
-) {
+): Promise<{ fallback: InstalledFontFile; override?: InstalledFontFile }> {
   let installed = fontsInstalled.get(ffmpeg);
   if (!installed) {
     installed = new Set();
@@ -353,18 +359,23 @@ async function ensureFont(
   } catch {
     // already exists
   }
-  const writeOne = async (family: string, url: string, format: string, path: string) => {
-    if (installed!.has(family)) return;
-    const bytes = await fetchFile(url);
-    await ffmpeg.writeFile(path, bytes);
-    installed!.add(family);
+  const writeOne = async (family: string, url: string, path: string): Promise<InstalledFontFile> => {
+    const bytes = await fetchFile(url) as Uint8Array;
+    const key = `${family}|${url}|${path}`;
+    if (!installed!.has(key)) {
+      // Re-write on first use of this exact file. Signed URLs may point to a
+      // different uploaded file with the same display family.
+      await ffmpeg.writeFile(path, bytes);
+      installed!.add(key);
+    }
+    return { family, path, bytes };
   };
-  // Always install Noto Sans as the guaranteed fallback face.
-  await writeOne(DEFAULT_FONT_FAMILY, FONT_URL, "ttf", "/fonts/NotoSans-Regular.ttf");
-  if (override) {
-    const safeName = override.family.replace(/[^a-zA-Z0-9-]+/g, "_");
-    await writeOne(override.family, override.url, override.format, `/fonts/${safeName}.${override.format}`);
-  }
+  const fallback = await writeOne(DEFAULT_FONT_FAMILY, FONT_URL, "/fonts/NotoSans-Regular.ttf");
+  if (!override) return { fallback };
+
+  const safeName = override.family.replace(/[^a-zA-Z0-9-]+/g, "_") || "CustomFont";
+  const custom = await writeOne(override.family, override.url, `/fonts/${safeName}.${override.format}`);
+  return { fallback, override: custom };
 }
 
 
