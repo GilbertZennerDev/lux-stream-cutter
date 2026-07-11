@@ -212,7 +212,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      set_default_font: { Args: { _font_id: string }; Returns: undefined }
+      [_ in never]: never
     }
     Enums: {
       app_role: "super_admin"
