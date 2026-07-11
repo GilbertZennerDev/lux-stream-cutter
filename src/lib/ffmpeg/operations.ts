@@ -512,6 +512,10 @@ export interface FontOverride {
   format: string;
 }
 
+function isBurnCompatibleFont(format: string): boolean {
+  return format === "ttf" || format === "otf";
+}
+
 function sanitizeAssFontFamily(family: string): string {
   const cleaned = family
     .replace(/[{},\\]/g, " ")
@@ -542,7 +546,8 @@ export async function burnSubtitles(
   const inputName = `burn_input_${token}.mp4`;
   const subsName = `subs_${token}.ass`;
   const outputName = `burned_${token}.mp4`;
-  await ensureFont(ffmpeg, fontOverride);
+  const burnFont = fontOverride && isBurnCompatibleFont(fontOverride.format) ? fontOverride : undefined;
+  await ensureFont(ffmpeg, burnFont);
   await ffmpeg.writeFile(inputName, await fetchFile(video));
   await ffmpeg.writeFile(subsName, new TextEncoder().encode(assText));
   const sf = scaleFilter(perf);
@@ -550,7 +555,7 @@ export async function burnSubtitles(
   // arg parser can't misinterpret the path, and `force_style=FontName=<family>`
   // to reassert the font at filter time — a defence in depth against libass
   // failing to match the ASS header Fontname against the /fonts directory.
-  const forcedFamily = sanitizeAssFontFamily(fontOverride?.family ?? DEFAULT_FONT_FAMILY);
+  const forcedFamily = sanitizeAssFontFamily(burnFont?.family ?? DEFAULT_FONT_FAMILY);
   const subsFilter = subtitleFilter(subsName, forcedFamily);
   const filters = ["setpts=PTS-STARTPTS", sf, subsFilter].filter(Boolean);
   const vf = filters.join(",");
