@@ -20,8 +20,9 @@ export async function getFFmpeg(): Promise<FFmpeg> {
   ffmpegPromise = (async () => {
     const ffmpeg = new FFmpeg();
     ffmpeg.on("log", ({ message }) => {
-      logListener?.(message);
+      for (const cb of logListeners) cb(message);
     });
+
     try {
       await ffmpeg.load({ coreURL, wasmURL });
       return ffmpeg;
