@@ -25,6 +25,7 @@ interface Props {
   onReset: () => void;
   onApplyToFollowing: (xPct: number, yPct: number) => void;
   onApplyToAll: (xPct: number, yPct: number) => void;
+  fontFamily?: string | null;
 }
 
 /**
