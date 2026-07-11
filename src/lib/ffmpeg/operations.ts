@@ -665,6 +665,7 @@ async function probeFontCandidate(
   const startLog = burnLogs.length;
   try {
     await ffmpeg.exec([
+      "-loglevel", "verbose",
       "-i", inputName,
       "-t", "0.10",
       "-vf", subtitleFilter(probeName),
