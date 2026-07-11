@@ -71,7 +71,11 @@ import {
   clearCutterSession,
   makeRecordingKey,
   makeFileKey,
+  saveCutterBlob,
+  loadCutterBlob,
+  hasCutterBlob,
 } from "@/lib/session/cutterSession";
+
 
 const indexSearchSchema = z.object({
   recording: z.string().uuid().optional(),
@@ -330,12 +334,35 @@ function Dashboard() {
     (async () => {
       try {
         toast.message("Loading recording…");
-        setRecordingLoadLabel("Creating download link…");
-        const { url, path, title, transcript, transcriptSrt } = await getRecordingDownloadUrl({ data: { id } });
-        const name = path.split("/").pop() ?? "recording.ts";
-        const f = await downloadRecordingFile(url, name, setRecordingLoadLabel);
+        // Fast path: reuse the cached blob from a previous session so a
+        // refresh doesn't re-download 100+ MB from Storage.
+        const cached = await loadCutterBlob(makeRecordingKey(id)).catch(() => null);
+        let f: File;
+        let title: string | null | undefined;
+        let transcript: Array<{ index?: number; start: number; end: number; text: string }> | undefined;
+        if (cached) {
+          setRecordingLoadLabel("Restoring cached video…");
+          f = cached;
+          // We still need title/transcript metadata; fetch it lightly.
+          try {
+            const meta = await getRecordingDownloadUrl({ data: { id } });
+            title = meta.title;
+            transcript = meta.transcript ?? undefined;
+          } catch {
+            title = cached.name;
+          }
+        } else {
+          setRecordingLoadLabel("Creating download link…");
+          const meta = await getRecordingDownloadUrl({ data: { id } });
+          const name = meta.path.split("/").pop() ?? "recording.ts";
+          f = await downloadRecordingFile(meta.url, name, setRecordingLoadLabel);
+          title = meta.title;
+          transcript = meta.transcript ?? undefined;
+          // Cache the freshly-downloaded blob for next refresh.
+          saveCutterBlob(makeRecordingKey(id), f, f).catch(() => {});
+        }
         setFile(f);
-        setSourceTitle(title ?? name);
+        setSourceTitle(title ?? f.name);
         setRecordingId(id);
         if (transcript && Array.isArray(transcript) && transcript.length > 0) {
           const rawPreloaded: SrtCue[] = transcript.map((c, i) => ({
@@ -348,10 +375,10 @@ function Dashboard() {
           const shortened = shortenCues(rawPreloaded, { maxSentences, maxChars });
           setCues(shortened);
           setSrtText(cuesToSrt(shortened));
-          toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB · ${shortened.length} blocks`);
+          toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB · ${shortened.length} blocks${cached ? " (cached)" : ""}`);
         } else {
           setRawCues([]);
-          toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB`);
+          toast.success(`Loaded ${(f.size / 1024 / 1024).toFixed(1)} MB${cached ? " (cached)" : ""}`);
         }
       } catch (err) {
         // Allow the user to retry by re-clicking Cut on the same recording.
@@ -362,6 +389,7 @@ function Dashboard() {
         setRecordingLoadLabel(null);
       }
     })();
+
     // `navigate` intentionally excluded — including it would re-fire this
     // effect on every render (useNavigate returns a fresh reference) and
     // wipe the loaded file after ~1s.
@@ -569,6 +597,23 @@ function Dashboard() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey]);
+
+  // Cache the source file blob to IndexedDB so a refresh doesn't force a
+  // re-download (recordings) or lose the local upload reference. Recording
+  // blobs are cached inline during the load flow above; here we cover the
+  // local-file / merged-blob / pending-source paths.
+  useEffect(() => {
+    if (!sessionKey || !file) return;
+    if (sessionKey.startsWith("rec:")) return; // handled in the recording effect
+    let cancelled = false;
+    (async () => {
+      if (await hasCutterBlob(sessionKey)) return;
+      if (cancelled) return;
+      await saveCutterBlob(sessionKey, file, file).catch(() => {});
+    })();
+    return () => { cancelled = true; };
+  }, [sessionKey, file]);
+
 
   const applySavedSession = (saved: Awaited<ReturnType<typeof loadCutterSession>>) => {
     if (!saved) return;
