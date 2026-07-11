@@ -1823,6 +1823,7 @@ function Dashboard() {
                                     text={c.text}
                                     videoWidth={sourceDims?.width}
                                     lockAxis={lockAxis}
+                                    fontFamily={fontFamily}
                                     onChange={(patch) => updateCuePos(c.index, patch)}
                                   />
                                 ) : (
