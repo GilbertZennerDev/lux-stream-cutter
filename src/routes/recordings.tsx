@@ -387,7 +387,7 @@ function RecordingsPage() {
                 {mergeBusy ? (
                   <Loader2 className="h-3 w-3 mr-2 animate-spin" />
                 ) : (
-                  <ScissorsIcon className="h-3 w-3 mr-2" />
+                  <Scissors className="h-3 w-3 mr-2" />
                 )}
                 {selectedRows.length === 1 ? "Open in Cutter" : `Merge & Cut (${selectedRows.length})`}
               </Button>
