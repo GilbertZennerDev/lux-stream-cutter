@@ -93,9 +93,7 @@ export function LiveSubtitleOverlay({
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
   };
 
-  // Pick the cue that covers the current time (binary search would be
-  // overkill — typical projects have <500 cues).
-  const activeCue = cues?.find((c) => currentTime >= c.start && currentTime <= c.end);
+  // Text + effective position for the currently-drawn caption.
   const text = activeCue?.text?.trim() || defaultSample;
   const activeX = activeCue?.xPct ?? xPct;
   const activeY = activeCue?.yPct ?? yPct;
