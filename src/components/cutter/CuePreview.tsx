@@ -18,6 +18,12 @@ interface Props {
   onChange: (patch: { xPct?: number; yPct?: number }) => void;
   /** Inline (list-row) or large (dialog). */
   size?: "inline" | "large";
+  /**
+   * Actual source video width in px. Used to scale ASS `fontSize`/`outline`
+   * (which are in video pixels) into preview pixels so the overlay matches
+   * the burned-in output. Defaults to 1280 for backward compat.
+   */
+  videoWidth?: number;
   /** If false, defers snapshot until the element is visible. */
   eager?: boolean;
 }
@@ -30,7 +36,7 @@ interface Props {
  */
 export function CuePreview({
   videoSrc, time, xPct, yPct, fontSize, outline, text, lockAxis = "free", onChange,
-  size = "inline", eager = false,
+  size = "inline", videoWidth = 1280, eager = false,
 }: Props) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
@@ -103,7 +109,7 @@ export function CuePreview({
   };
 
   // Scale ASS px → preview px, mirroring LiveSubtitleOverlay.
-  const scale = boxWidth / 1280;
+  const scale = boxWidth / Math.max(1, videoWidth);
   const previewFont = Math.max(8, Math.round(fontSize * scale));
   const previewOutline = Math.max(0, outline * scale);
   const shadow = previewOutline > 0

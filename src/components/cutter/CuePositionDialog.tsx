@@ -18,6 +18,7 @@ interface Props {
   defaultY: number;
   fontSize: number;
   outline: number;
+  videoWidth?: number;
   lockAxis: LockAxis;
   onLockAxisChange: (v: LockAxis) => void;
   onChange: (patch: { xPct?: number; yPct?: number }) => void;
@@ -32,7 +33,7 @@ interface Props {
  * users don't have to reposition every cue by hand.
  */
 export function CuePositionDialog({
-  open, onOpenChange, cue, videoSrc, defaultX, defaultY, fontSize, outline, lockAxis, onLockAxisChange,
+  open, onOpenChange, cue, videoSrc, defaultX, defaultY, fontSize, outline, videoWidth, lockAxis, onLockAxisChange,
   onChange, onReset, onApplyToFollowing, onApplyToAll,
 }: Props) {
   const cx = cue?.xPct ?? defaultX;
@@ -87,6 +88,7 @@ export function CuePositionDialog({
               fontSize={fontSize}
               outline={outline}
               text={cue.text}
+              videoWidth={videoWidth}
               lockAxis={lockAxis}
               onChange={onChange}
               size="large"

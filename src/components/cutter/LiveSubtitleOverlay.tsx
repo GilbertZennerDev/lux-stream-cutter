@@ -17,6 +17,8 @@ interface Props {
   onCueChange?: (cueIndex: number, patch: { xPct?: number; yPct?: number }) => void;
   onTimeUpdate?: (t: number) => void;
   lockAxis?: LockAxis;
+  /** Actual source-video width in px so fontSize/outline scale identically to burn-in. */
+  videoWidth?: number;
   /** Optional external ref for parent-controlled seeking. */
   videoRef?: React.RefObject<HTMLVideoElement | null>;
 }
@@ -31,7 +33,7 @@ interface Props {
  */
 export function LiveSubtitleOverlay({
   src, xPct, yPct, fontSize, outline, cues, defaultSample = "Beispill Ennertitlen",
-  onChange, onCueChange, onTimeUpdate, lockAxis = "free", videoRef,
+  onChange, onCueChange, onTimeUpdate, lockAxis = "free", videoWidth, videoRef,
 }: Props) {
   const internalVideoRef = useRef<HTMLVideoElement>(null);
   const videoElRef = videoRef ?? internalVideoRef;
@@ -100,8 +102,8 @@ export function LiveSubtitleOverlay({
 
   // Scale the ASS font-size (assumed authored against a 720-tall source video
   // in cuesToAss) into preview pixels. We map by width so wide overlays feel
-  // right regardless of aspect. ASS default PlayResX is ~1280 in cuesToAss.
-  const scale = boxWidth / 1280;
+  // right regardless of aspect. ASS PlayResX matches source video width in cuesToAss.
+  const scale = boxWidth / Math.max(1, videoWidth ?? 1280);
   const previewFont = Math.max(8, Math.round(fontSize * scale));
   const previewOutline = Math.max(0, outline * scale);
   const shadow = previewOutline > 0

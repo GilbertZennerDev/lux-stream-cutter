@@ -1335,6 +1335,19 @@ function Dashboard() {
     };
   }, [sourcePreviewUrl]);
 
+  // Track source dimensions so per-cue previews scale ASS fontSize/outline
+  // exactly the same way as the burned-in output (which uses actual video px).
+  const [sourceDims, setSourceDims] = useState<{ width: number; height: number } | null>(null);
+  useEffect(() => {
+    const src = sourcePreviewBlob ?? file;
+    if (!src) { setSourceDims(null); return; }
+    let cancelled = false;
+    getVideoDimensions(src)
+      .then((d) => { if (!cancelled) setSourceDims(d); })
+      .catch(() => { if (!cancelled) setSourceDims(null); });
+    return () => { cancelled = true; };
+  }, [file, sourcePreviewBlob]);
+
   useEffect(() => {
     let cancelled = false;
     setSourcePreviewBlob(null);
@@ -1714,6 +1727,7 @@ function Dashboard() {
                                     fontSize={fontSize}
                                     outline={subOutline}
                                     text={c.text}
+                                    videoWidth={sourceDims?.width}
                                     lockAxis={lockAxis}
                                     onChange={(patch) => updateCuePos(c.index, patch)}
                                   />
@@ -1795,6 +1809,7 @@ function Dashboard() {
                     outline={subOutline}
                     cues={cues.length > 0 ? cues : undefined}
                     lockAxis={lockAxis}
+                    videoWidth={sourceDims?.width}
                     onChange={(x, y) => {
                       setSubX(x);
                       setSubY(y);
@@ -2341,6 +2356,7 @@ function Dashboard() {
         defaultY={subY}
         fontSize={fontSize}
         outline={subOutline}
+        videoWidth={sourceDims?.width}
         lockAxis={lockAxis}
         onLockAxisChange={setLockAxis}
         onChange={(patch) => { if (editorCueIdx !== null) updateCuePos(editorCueIdx, patch); }}
