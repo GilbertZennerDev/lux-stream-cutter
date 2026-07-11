@@ -21,6 +21,8 @@ interface Props {
   videoWidth?: number;
   /** Optional external ref for parent-controlled seeking. */
   videoRef?: React.RefObject<HTMLVideoElement | null>;
+  /** Optional custom font family (matches ASS Fontname + @font-face). */
+  fontFamily?: string | null;
 }
 
 /**
