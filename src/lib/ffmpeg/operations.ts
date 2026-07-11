@@ -481,6 +481,29 @@ interface DrawtextAssData {
   cues: DrawtextCue[];
 }
 
+interface BurnVisibilityProbe {
+  timeSec: number;
+  xPct: number;
+  yPct: number;
+  cropWRatio: number;
+  cropHRatio: number;
+}
+
+interface BurnVisibilityMetrics {
+  meanAbsDiff: number;
+  strongDiffFraction: number;
+  comparedBytes: number;
+}
+
+class BurnVerificationError extends Error {
+  metrics?: BurnVisibilityMetrics;
+  constructor(message: string, metrics?: BurnVisibilityMetrics) {
+    super(message);
+    this.name = "BurnVerificationError";
+    this.metrics = metrics;
+  }
+}
+
 function parseAssClock(value: string): number {
   const m = value.trim().match(/^(\d+):(\d{2}):(\d{2})\.(\d{1,2})$/);
   if (!m) return 0;
@@ -533,6 +556,117 @@ function parseGeneratedAssForDrawtext(assText: string): DrawtextAssData | null {
   }
 
   return cues.length > 0 ? { width, height, fontSize, outline, cues } : null;
+}
+
+function firstVisibilityProbe(assText: string): BurnVisibilityProbe | null {
+  const parsed = parseGeneratedAssForDrawtext(assText);
+  if (!parsed) return null;
+  const cue = parsed.cues.find((c) => c.end > c.start && c.text.trim().length > 0);
+  if (!cue) return null;
+  const lines = cue.text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const longestLine = Math.max(1, ...lines.map((line) => line.length));
+  const lineCount = Math.max(1, lines.length);
+  const estimatedTextWidth = longestLine * parsed.fontSize * 0.72 + parsed.outline * 10;
+  const estimatedTextHeight = lineCount * parsed.fontSize * 1.85 + parsed.outline * 12;
+  return {
+    timeSec: Math.max(cue.start, Math.min(cue.end - 0.03, (cue.start + cue.end) / 2)),
+    xPct: cue.xPct,
+    yPct: cue.yPct,
+    cropWRatio: Math.max(0.22, Math.min(0.96, estimatedTextWidth / Math.max(1, parsed.width))),
+    cropHRatio: Math.max(0.12, Math.min(0.48, estimatedTextHeight / Math.max(1, parsed.height))),
+  };
+}
+
+function probeCropFilter(probe: BurnVisibilityProbe, perf: PerfOptions, includeScale: boolean): string {
+  const sf = includeScale ? scaleFilter(perf) : null;
+  const x = (probe.xPct / 100).toFixed(5);
+  const y = (probe.yPct / 100).toFixed(5);
+  const w = probe.cropWRatio.toFixed(5);
+  const h = probe.cropHRatio.toFixed(5);
+  const crop = [
+    "crop",
+    `w='max(2,trunc(iw*${w}/2)*2)'`,
+    `h='max(2,trunc(ih*${h}/2)*2)'`,
+    `x='min(max(0,iw*${x}-ow/2),iw-ow)'`,
+    `y='min(max(0,ih*${y}-oh/2),ih-oh)'`,
+  ].join(":");
+  return [sf, crop].filter(Boolean).join(",");
+}
+
+async function extractProbeCrop(
+  ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>,
+  inputName: string,
+  rawName: string,
+  probe: BurnVisibilityProbe,
+  perf: PerfOptions,
+  includeScale: boolean,
+): Promise<Uint8Array> {
+  try { await ffmpeg.deleteFile(rawName); } catch {}
+  await ffmpeg.exec([
+    "-ss", probe.timeSec.toFixed(3),
+    "-i", inputName,
+    "-frames:v", "1",
+    "-vf", probeCropFilter(probe, perf, includeScale),
+    "-an",
+    "-f", "rawvideo",
+    "-pix_fmt", "rgb24",
+    "-y", rawName,
+  ]);
+  const bytes = await readOutputFile(ffmpeg, rawName, "Burn verification frame");
+  try { await ffmpeg.deleteFile(rawName); } catch {}
+  return bytes;
+}
+
+function compareRawCrops(reference: Uint8Array, burned: Uint8Array): BurnVisibilityMetrics {
+  const n = Math.min(reference.length, burned.length);
+  if (n <= 0) return { meanAbsDiff: 0, strongDiffFraction: 0, comparedBytes: 0 };
+  let sum = 0;
+  let strong = 0;
+  for (let i = 0; i < n; i++) {
+    const d = Math.abs(reference[i] - burned[i]);
+    sum += d;
+    if (d >= 32) strong++;
+  }
+  return {
+    meanAbsDiff: sum / n,
+    strongDiffFraction: strong / n,
+    comparedBytes: n,
+  };
+}
+
+function subtitlesAreVisible(metrics: BurnVisibilityMetrics): boolean {
+  // The comparison is intentionally region-focused. Normal H.264 re-encode
+  // noise usually changes many bytes slightly; real white text + black outline
+  // changes a smaller subtitle-shaped area strongly.
+  return metrics.comparedBytes > 0 && (
+    metrics.meanAbsDiff >= 4.5 ||
+    metrics.strongDiffFraction >= 0.012 ||
+    (metrics.meanAbsDiff >= 2.5 && metrics.strongDiffFraction >= 0.004)
+  );
+}
+
+async function verifyBurnedSubtitlePixels(
+  ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>,
+  inputName: string,
+  outputName: string,
+  assText: string,
+  perf: PerfOptions,
+  token: string,
+): Promise<BurnVisibilityMetrics> {
+  const probe = firstVisibilityProbe(assText);
+  if (!probe) throw new BurnVerificationError("Could not build a subtitle visibility probe from ASS cues");
+  const refName = `verify_ref_${token}.rgb`;
+  const outName = `verify_out_${token}.rgb`;
+  const reference = await extractProbeCrop(ffmpeg, inputName, refName, probe, perf, true);
+  const burned = await extractProbeCrop(ffmpeg, outputName, outName, probe, perf, false);
+  const metrics = compareRawCrops(reference, burned);
+  if (!subtitlesAreVisible(metrics)) {
+    throw new BurnVerificationError(
+      `Burned MP4 verification failed: subtitle region still matches the plain clip (mean diff ${metrics.meanAbsDiff.toFixed(2)}, strong ${(metrics.strongDiffFraction * 100).toFixed(2)}%)`,
+      metrics,
+    );
+  }
+  return metrics;
 }
 
 function escapeDrawtextValue(value: string): string {
