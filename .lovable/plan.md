@@ -1,39 +1,59 @@
-## Root cause
+## Goal
 
-The per-block preview and the final burned video differ because of **line wrapping**, not font size:
+Add font upload directly to the Cutter UI. Any signed-in user can upload a TTF/OTF/WOFF/WOFF2, pick one as the active font for the current session, and mark one as the shared default. The chosen font is used both in the transcript-block previews AND in the burned MP4, so preview and burn stay visually identical.
 
-- **Preview** (`CuePreview.tsx`, `LiveSubtitleOverlay.tsx`) renders each caption inside a CSS box with `max-width: 92%` and `whitespace-pre-line`. Long cues wrap automatically onto 2–3 lines.
-- **Burn-in** (`cuesToAss` in `src/lib/ffmpeg/operations.ts`) writes the ASS header with `WrapStyle: 2`, which means "no automatic wrapping — only explicit `\N` breaks the line". Long cues render as one very wide single line that spills far past what the preview showed.
+## UX (all inside `/` — Cutter route)
 
-Font-size scaling was already fixed last turn, so short cues already match. The remaining mismatch is 100% due to wrapping. Bold/font-family differences are negligible visually.
+New compact "Font" control in the top style bar (next to font-size / outline):
 
-## Fix
+- Dropdown listing all uploaded fonts (shows family name; the default is marked with a small star).
+- "Upload font…" item at the bottom of the dropdown opens a native file picker (`.ttf,.otf,.woff,.woff2`, max 5 MB).
+- "Set as default" toggle next to the dropdown — applies the currently selected font as the shared default for everyone.
+- "Delete" (trash icon) next to the dropdown — only shown for fonts the current user uploaded (or to admins).
 
-Pre-wrap the cue text in JavaScript before it goes into the ASS file, using the exact same width budget the preview uses (92 % of source video width) and the same per-cue font size. Insert `\N` at the chosen break points and keep `WrapStyle: 2` so ffmpeg respects our breaks verbatim.
+Selection is persisted per-session in `cutterSession` alongside `fontSize` / `subOutline`. On first load, falls back to the shared default; if none, falls back to Noto Sans (current behaviour).
 
-Steps in `src/lib/ffmpeg/operations.ts`:
+## Data model
 
-1. Add a helper `wrapTextForAss(text, fontSizePx, maxWidthPx)` that:
-   - Uses an offscreen `<canvas>` 2D context with font `bold ${fontSize}px "Noto Sans", sans-serif` (matches burn Bold=1 + Noto Sans and closely matches the preview's `font-semibold`).
-   - Greedy word-wrap: builds lines word-by-word, starts a new line when `measureText(line + " " + word).width > maxWidthPx`.
-   - Preserves any explicit `\n` the user typed as hard breaks.
-   - Returns the text with `\n` between wrapped lines; the existing `escapeAssText` already converts `\n` → `\N`.
+New table `public.fonts`:
+- `id uuid pk`, `family text not null`, `original_filename text`, `storage_path text not null`, `format text` (`ttf|otf|woff|woff2`), `size_bytes int`, `is_default boolean default false`, `uploaded_by uuid not null references auth.users`, `created_at timestamptz default now()`.
+- Partial unique index: only one row can have `is_default=true`.
+- RLS: `SELECT` for `authenticated`; `INSERT` for `authenticated` (with `uploaded_by = auth.uid()`); `UPDATE`/`DELETE` for the uploader OR admins (`has_role(auth.uid(),'admin')`). `is_default` toggle allowed for any authenticated user (fonts are a shared team resource; behaviour matches how any user can change subtitle style).
+- GRANTs: `SELECT, INSERT, UPDATE, DELETE` to `authenticated`; `ALL` to `service_role`.
 
-2. In `cuesToAss`, for each cue compute `maxWidthPx = Math.round(w * 0.92)` (same 92 % the preview uses) and pass the cue's effective font size (currently the shared `style.fontSize` — per-cue font override isn't in the model, so shared size is correct).
+New private storage bucket `fonts` with RLS letting authenticated users read all objects and insert/delete their own.
 
-3. Guard for SSR / no-canvas: if `typeof document === "undefined"` or `getContext("2d")` returns null, fall back to a character-count heuristic (`~ maxWidthPx / (fontSize * 0.55)` chars per line) so the burn worker path stays deterministic.
+## Server functions (`src/lib/fonts.functions.ts`)
 
-4. Keep `WrapStyle: 2` (respect our explicit breaks; libass won't add its own).
+- `listFonts()` → rows + short-lived signed URLs (24h).
+- `createFontUpload({ filename, sizeBytes, format })` → returns a signed upload URL + pending row id.
+- `markFontReady({ id, family })` → flips status to ready with the parsed family name.
+- `setDefaultFont({ id })` → clears other rows' `is_default` in a transaction, sets this one.
+- `deleteFont({ id })` → removes storage object + row (RLS enforces uploader/admin check).
 
-No changes to the preview components — the preview is what the user is anchoring on, so we make the burn match it, not the other way around.
+Family name is parsed client-side using `opentype.js` (lightweight, worker-safe) before calling `markFontReady`, so ASS `Fontname` and CSS `font-family` always match — critical for libass to actually load the font.
+
+## Client wiring
+
+- `src/lib/fonts/useFonts.ts` — TanStack Query hook: fetches font list, injects one `@font-face` per font into a singleton `<style>` tag on the document. Re-injects when signed URLs refresh.
+- `src/components/cutter/FontPicker.tsx` — new dropdown + upload/set-default/delete controls.
+- `src/routes/index.tsx` (Cutter):
+  - New state `selectedFontFamily: string | null`, persisted in `cutterSession`.
+  - Mount the `FontPicker` in the style bar.
+  - Thread `fontFamily` into `CuePreview`, `LiveSubtitleOverlay` (replaces the hard-coded `font-sans` class with an inline `style={{ fontFamily }}`), and into `cuesToAss` / `burnSubtitles`.
+- `src/lib/ffmpeg/operations.ts`:
+  - Replace hard-coded `FONT_FAMILY = "Noto Sans"` / `FONT_URL` with values plumbed from the caller.
+  - `ensureFont(ffmpeg, { family, url, format })` — writes the chosen font into `/fonts/<family>.<ext>` inside ffmpeg's virtual FS; tracks install per-ffmpeg-instance in a `Map<ffmpeg, Set<family>>` so switching fonts mid-session re-installs correctly (no false "already loaded" hits).
+  - `cuesToAss` takes `style.fontFamily`. The ASS `Style:` line uses it, and the canvas `wrapCtx.font` uses it too so the word-wrap width match (established last turn) still holds.
+  - Falls back to bundled Noto Sans when no font is selected.
 
 ## Verification
 
-- Typecheck with `tsgo --noEmit`.
-- Manually: a long cue that wraps to 3 lines in the transcript-row preview should burn as the same 3 lines at the same positions in the exported MP4.
+- `tsgo --noEmit`.
+- Manual: upload a TTF from the Cutter → dropdown gets a new option → select it → transcript previews re-render with it. Set as default → reload → still selected. Burn a short clip → exported MP4 uses the same font, long cues wrap at the same points as the preview.
 
 ## Out of scope
 
-- Per-cue font-size overrides (not in the data model today).
-- Switching the preview font to Noto Sans WOFF (system sans is visually close enough; would add a font download to every list row).
-- Changing wrap width from 92 % (matches current preview `max-width`).
+- Per-cue font override (font is per-session, matching how `fontSize` works).
+- Font subsetting / variable-font axes.
+- Grouping multiple weights into one family entry (each file = one row).

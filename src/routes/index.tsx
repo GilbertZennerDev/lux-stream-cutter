@@ -66,6 +66,8 @@ import { SubtitlePreview } from "@/components/cutter/SubtitlePreview";
 import { LiveSubtitleOverlay } from "@/components/cutter/LiveSubtitleOverlay";
 import { CuePreview } from "@/components/cutter/CuePreview";
 import { CuePositionDialog } from "@/components/cutter/CuePositionDialog";
+import { FontPicker } from "@/components/cutter/FontPicker";
+import { useFonts } from "@/lib/fonts/useFonts";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Maximize2, LockKeyhole, MoveHorizontal, MoveVertical, SplitSquareHorizontal, Merge, RefreshCw } from "lucide-react";
 import { SyncCalibrator } from "@/components/cutter/SyncCalibrator";
@@ -531,6 +533,15 @@ function Dashboard() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [lockAxis, setLockAxis] = useState<"free" | "x" | "y">("free");
   const [editorCueIdx, setEditorCueIdx] = useState<number | null>(null);
+  const [fontFamily, setFontFamily] = useState<string | null>(null);
+  const { fonts: availableFonts } = useFonts();
+  // Resolve font override once for burn calls: selected font's signed URL.
+  const fontOverride = (() => {
+    if (!fontFamily) return undefined;
+    const f = availableFonts.find((x) => x.family === fontFamily && x.status === "ready" && x.url);
+    if (!f || !f.url) return undefined;
+    return { family: f.family, url: f.url, format: f.format };
+  })();
 
   const perfState = usePerfTier();
   const perf = perfState.profile;
@@ -802,6 +813,7 @@ function Dashboard() {
     setAudioOffsetSec(saved.audioOffsetSec);
     setBurnIn(saved.burnIn);
     if (saved.lockAxis) setLockAxis(saved.lockAxis);
+    if (saved.fontFamily !== undefined) setFontFamily(saved.fontFamily);
   };
 
   const acceptRestore = async () => {
@@ -844,6 +856,7 @@ function Dashboard() {
         audioOffsetSec,
         burnIn,
         lockAxis,
+        fontFamily,
       }).catch(() => {});
     }, 800);
     return () => {
@@ -851,7 +864,7 @@ function Dashboard() {
     };
   }, [
     sessionKey, file, rawCues, cues, selectedCues, mode, segments,
-    subX, subY, fontSize, subOutline, maxSentences, maxChars, audioOffsetSec, burnIn, lockAxis,
+    subX, subY, fontSize, subOutline, maxSentences, maxChars, audioOffsetSec, burnIn, lockAxis, fontFamily,
   ]);
 
   const resetSession = async () => {
@@ -1100,8 +1113,9 @@ function Dashboard() {
           yPct: subY,
           videoWidth: dims.width,
           videoHeight: dims.height,
+          fontFamily,
         });
-        const subbed = await burnSubtitles(workingVideo, ass, setProgress, { lowPerf: effLowPerf, maxHeight: effMaxHeight });
+        const subbed = await burnSubtitles(workingVideo, ass, setProgress, { lowPerf: effLowPerf, maxHeight: effMaxHeight }, fontOverride);
         checkCancel();
         setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
         setProgress(1);
@@ -1347,8 +1361,9 @@ function Dashboard() {
         yPct: subY,
         videoWidth: dims.width,
         videoHeight: dims.height,
+        fontFamily,
       });
-      const subbed = await burnSubtitles(clip, ass, setProgress, { lowPerf: effLowPerf, maxHeight: effMaxHeight });
+      const subbed = await burnSubtitles(clip, ass, setProgress, { lowPerf: effLowPerf, maxHeight: effMaxHeight }, fontOverride);
       checkCancel();
       setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
       setProgress(1);
@@ -1808,6 +1823,7 @@ function Dashboard() {
                                     text={c.text}
                                     videoWidth={sourceDims?.width}
                                     lockAxis={lockAxis}
+                                    fontFamily={fontFamily}
                                     onChange={(patch) => updateCuePos(c.index, patch)}
                                   />
                                 ) : (
@@ -1867,6 +1883,8 @@ function Dashboard() {
               <CardTitle className="text-base">Subtitle look</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <FontPicker value={fontFamily} onChange={setFontFamily} />
+
               <div>
                 <div className="flex items-center justify-between">
                   <Label>Font size</Label>
@@ -1889,6 +1907,7 @@ function Dashboard() {
                     cues={cues.length > 0 ? cues : undefined}
                     lockAxis={lockAxis}
                     videoWidth={sourceDims?.width}
+                    fontFamily={fontFamily}
                     onChange={(x, y) => {
                       setSubX(x);
                       setSubY(y);
@@ -2437,6 +2456,7 @@ function Dashboard() {
         outline={subOutline}
         videoWidth={sourceDims?.width}
         lockAxis={lockAxis}
+        fontFamily={fontFamily}
         onLockAxisChange={setLockAxis}
         onChange={(patch) => { if (editorCueIdx !== null) updateCuePos(editorCueIdx, patch); }}
         onReset={() => { if (editorCueIdx !== null) resetCuePos(editorCueIdx); }}

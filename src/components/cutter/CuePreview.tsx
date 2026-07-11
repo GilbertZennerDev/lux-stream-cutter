@@ -26,6 +26,8 @@ interface Props {
   videoWidth?: number;
   /** If false, defers snapshot until the element is visible. */
   eager?: boolean;
+  /** Optional custom font family (matches ASS Fontname + @font-face). */
+  fontFamily?: string | null;
 }
 
 /**
@@ -36,7 +38,7 @@ interface Props {
  */
 export function CuePreview({
   videoSrc, time, xPct, yPct, fontSize, outline, text, lockAxis = "free", onChange,
-  size = "inline", videoWidth = 1280, eager = false,
+  size = "inline", videoWidth = 1280, eager = false, fontFamily,
 }: Props) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
@@ -155,7 +157,7 @@ export function CuePreview({
       )}
 
       <span
-        className="absolute font-sans font-semibold text-white text-center leading-tight whitespace-pre-line pointer-events-none px-2"
+        className="absolute font-semibold text-white text-center leading-tight whitespace-pre-line pointer-events-none px-2"
         style={{
           left: `${xPct}%`,
           top: `${yPct}%`,
@@ -163,6 +165,7 @@ export function CuePreview({
           fontSize: `${previewFont}px`,
           textShadow: shadow,
           maxWidth: "92%",
+          fontFamily: fontFamily ? `"${fontFamily}", system-ui, sans-serif` : undefined,
         }}
       >
         {displayText}

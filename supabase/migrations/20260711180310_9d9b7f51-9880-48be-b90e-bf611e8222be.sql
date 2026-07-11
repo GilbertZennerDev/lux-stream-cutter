@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.set_default_font(UUID);

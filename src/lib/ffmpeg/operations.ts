@@ -313,23 +313,40 @@ export async function extractAudioMp3(
 
 const FONT_URL =
   "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf";
-const FONT_FAMILY = "Noto Sans";
-// Track font install per ffmpeg instance. A cancel/reload creates a new
-// FFmpeg with a fresh virtual filesystem, so a module-level boolean would
-// falsely report the font as loaded and libass would silently render
-// nothing — subtitles disappear from the burned output.
-const fontLoadedFor = new WeakSet<object>();
+const DEFAULT_FONT_FAMILY = "Noto Sans";
+// Track which font families have been installed on which ffmpeg instance.
+// A cancel/reload creates a new FFmpeg with a fresh virtual filesystem, and
+// the user may switch fonts mid-session — a Map per instance lets us install
+// on demand without re-writing the same file every call.
+const fontsInstalled = new WeakMap<object, Set<string>>();
 
-async function ensureFont(ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>) {
-  if (fontLoadedFor.has(ffmpeg)) return;
+/**
+ * Fetch a font file into ffmpeg's /fonts dir. Idempotent per instance/family.
+ * When no override is given, falls back to the bundled Noto Sans.
+ */
+async function ensureFont(
+  ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>,
+  override?: { family: string; url: string; format: string },
+) {
+  const family = override?.family ?? DEFAULT_FONT_FAMILY;
+  const url = override?.url ?? FONT_URL;
+  const format = override?.format ?? "ttf";
+  let installed = fontsInstalled.get(ffmpeg);
+  if (!installed) {
+    installed = new Set();
+    fontsInstalled.set(ffmpeg, installed);
+  }
+  if (installed.has(family)) return;
   try {
     await ffmpeg.createDir("/fonts");
   } catch {
     // already exists
   }
-  const bytes = await fetchFile(FONT_URL);
-  await ffmpeg.writeFile("/fonts/NotoSans-Regular.ttf", bytes);
-  fontLoadedFor.add(ffmpeg);
+  const bytes = await fetchFile(url);
+  // libass reads by file extension; sanitize family for filesystem use.
+  const safeName = family.replace(/[^a-zA-Z0-9-]+/g, "_");
+  await ffmpeg.writeFile(`/fonts/${safeName}.${format}`, bytes);
+  installed.add(family);
 }
 
 export interface SubtitleStyle {
@@ -345,6 +362,8 @@ export interface SubtitleStyle {
   videoWidth: number;
   /** Video height in pixels (used as ASS PlayResY). */
   videoHeight: number;
+  /** Optional font family override (must match a value installed via ensureFont). */
+  fontFamily?: string | null;
 }
 
 function assTime(seconds: number): string {
@@ -369,15 +388,15 @@ export interface AssCue { start: number; end: number; text: string; xPct?: numbe
 // Cache one measuring context per font-size so we don't recreate it per cue.
 let wrapCanvas: HTMLCanvasElement | null = null;
 let wrapCtx: CanvasRenderingContext2D | null = null;
-function getWrapCtx(fontSize: number): CanvasRenderingContext2D | null {
+function getWrapCtx(fontSize: number, fontFamily: string): CanvasRenderingContext2D | null {
   if (typeof document === "undefined") return null;
   if (!wrapCanvas) {
     wrapCanvas = document.createElement("canvas");
     wrapCtx = wrapCanvas.getContext("2d");
   }
   if (!wrapCtx) return null;
-  // Match burn font (Noto Sans, Bold=1) and preview (`font-semibold`).
-  wrapCtx.font = `bold ${fontSize}px "Noto Sans", system-ui, sans-serif`;
+  // Match burn font (Bold=1) and preview (`font-semibold`).
+  wrapCtx.font = `bold ${fontSize}px "${fontFamily}", system-ui, sans-serif`;
   return wrapCtx;
 }
 
@@ -387,8 +406,8 @@ function getWrapCtx(fontSize: number): CanvasRenderingContext2D | null {
  * user typed. Falls back to a char-count heuristic outside the browser
  * (worker/SSR) so results stay deterministic.
  */
-function wrapTextForAss(text: string, fontSize: number, maxWidthPx: number): string {
-  const ctx = getWrapCtx(fontSize);
+function wrapTextForAss(text: string, fontSize: number, maxWidthPx: number, fontFamily: string): string {
+  const ctx = getWrapCtx(fontSize, fontFamily);
   const fallbackCharsPerLine = Math.max(6, Math.floor(maxWidthPx / (fontSize * 0.55)));
 
   const wrapLine = (line: string): string => {
@@ -425,10 +444,13 @@ export function cuesToAss(cues: AssCue[], style: SubtitleStyle): string {
   const outline = Math.max(0, style.outline);
   const defaultX = Math.round((style.xPct / 100) * w);
   const defaultY = Math.round((style.yPct / 100) * h);
+  const fontFamily = style.fontFamily && style.fontFamily.trim().length > 0
+    ? style.fontFamily
+    : DEFAULT_FONT_FAMILY;
 
   // Alignment=5 => middle-center anchor, so \pos(x,y) places the centre of the text at (x,y).
   const styleLine =
-    `Style: Default,${FONT_FAMILY},${style.fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,` +
+    `Style: Default,${fontFamily},${style.fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,` +
     `1,0,0,0,100,100,0,0,1,${outline},0,5,0,0,0,1`;
 
   // Match the preview: captions in <CuePreview>/<LiveSubtitleOverlay> wrap
@@ -441,7 +463,7 @@ export function cuesToAss(cues: AssCue[], style: SubtitleStyle): string {
     .map((c) => {
       const px = typeof c.xPct === "number" ? Math.round((c.xPct / 100) * w) : defaultX;
       const py = typeof c.yPct === "number" ? Math.round((c.yPct / 100) * h) : defaultY;
-      const wrapped = wrapTextForAss(c.text, style.fontSize, maxWidthPx);
+      const wrapped = wrapTextForAss(c.text, style.fontSize, maxWidthPx, fontFamily);
       return `Dialogue: 0,${assTime(c.start)},${assTime(c.end)},Default,,0,0,0,,{\\pos(${px},${py})}${escapeAssText(wrapped)}`;
     })
     .join("\n");
@@ -465,11 +487,18 @@ export function cuesToAss(cues: AssCue[], style: SubtitleStyle): string {
   ].join("\n");
 }
 
+export interface FontOverride {
+  family: string;
+  url: string;
+  format: string;
+}
+
 export async function burnSubtitles(
   video: File | Blob,
   assText: string,
   onP?: ProgressCb,
   perf: PerfOptions = {},
+  fontOverride?: FontOverride,
 ): Promise<Uint8Array> {
   const ffmpeg = await getFFmpeg();
   const off = onP ? onProgress(ffmpeg, onP) : () => {};
@@ -477,7 +506,7 @@ export async function burnSubtitles(
   const inputName = `burn_input_${token}.mp4`;
   const subsName = `subs_${token}.ass`;
   const outputName = `burned_${token}.mp4`;
-  await ensureFont(ffmpeg);
+  await ensureFont(ffmpeg, fontOverride);
   await ffmpeg.writeFile(inputName, await fetchFile(video));
   await ffmpeg.writeFile(subsName, new TextEncoder().encode(assText));
   const sf = scaleFilter(perf);
