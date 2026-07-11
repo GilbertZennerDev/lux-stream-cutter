@@ -535,11 +535,11 @@ export async function burnSubtitles(
   // found", "Could not open font", etc.) surface in the Cutter's log panel.
   const burnLogs: string[] = [];
   const { onFfmpegLog } = await import("./client");
-  onFfmpegLog((msg) => {
+  const unsubscribeLog = onFfmpegLog((msg) => {
     burnLogs.push(msg);
-    // Cap to keep memory in check on long runs.
     if (burnLogs.length > 500) burnLogs.shift();
   });
+
 
   try {
     // NOTE: Do NOT combine `-map 0:v:0` with `-vf` here. When the video
