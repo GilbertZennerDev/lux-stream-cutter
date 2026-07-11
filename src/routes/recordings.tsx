@@ -189,7 +189,91 @@ function RecordingsPage() {
     upload.mutate(files);
   };
 
-  const grouped = groupBySession(data ?? []);
+  // Multi-select + search for bulk actions.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeLabel, setMergeLabel] = useState("");
+
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const clearSelected = () => setSelected(new Set());
+
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows = data ?? [];
+    if (!q) return rows;
+    return rows.filter((r) => {
+      if (r.title?.toLowerCase().includes(q)) return true;
+      if (r.storage_path.toLowerCase().includes(q)) return true;
+      if (r.session_date.includes(q)) return true;
+      if (r.transcript?.some((c) => c.text.toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }, [data, query]);
+
+  const grouped = groupBySession(filteredRows);
+
+  const selectedRows = useMemo(
+    () => (data ?? []).filter((r) => selected.has(r.id) && r.status === "ready"),
+    [data, selected],
+  );
+
+  const selectWholeSession = (group: Group) => {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      const readyIds = group.rows.filter((r) => r.status === "ready").map((r) => r.id);
+      const allIn = readyIds.every((id) => n.has(id));
+      if (allIn) readyIds.forEach((id) => n.delete(id));
+      else readyIds.forEach((id) => n.add(id));
+      return n;
+    });
+  };
+
+  const cutMerged = async () => {
+    if (selectedRows.length === 0) return;
+    if (selectedRows.length === 1) {
+      openInCutter(selectedRows[0]);
+      clearSelected();
+      return;
+    }
+    setMergeBusy(true);
+    const t = toast.loading(`Merging ${selectedRows.length} chunks…`);
+    try {
+      const { file, cues, title } = await mergeRecordings(selectedRows, (label, done, total) => {
+        setMergeLabel(`${label} (${done}/${total})`);
+      });
+      const id = setPendingSource({ file, cues, title });
+      toast.success(`Merged ${selectedRows.length} chunks → opening in Cutter`, { id: t });
+      clearSelected();
+      navigate({ to: "/", search: { pending: id } });
+    } catch (err) {
+      toast.error((err as Error).message, { id: t });
+    } finally {
+      setMergeBusy(false);
+      setMergeLabel("");
+    }
+  };
+
+  const downloadSelected = async () => {
+    for (const r of selectedRows) {
+      dl.mutate(r);
+      await new Promise((res) => setTimeout(res, 300));
+    }
+  };
+
+  const deleteSelected = () => {
+    if (selectedRows.length === 0) return;
+    if (!confirm(`Delete ${selectedRows.length} recording${selectedRows.length === 1 ? "" : "s"}?`)) return;
+    selectedRows.forEach((r) => del.mutate(r.id));
+    clearSelected();
+  };
+
 
   return (
     <div className="min-h-screen bg-background text-foreground">
