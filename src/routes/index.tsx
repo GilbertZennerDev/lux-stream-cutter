@@ -544,6 +544,11 @@ function Dashboard() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [logOpen, setLogOpen] = useState(false);
+  const [posControlsOpen, setPosControlsOpen] = useState(false);
+  useEffect(() => {
+    if (logs.at(-1)?.startsWith("[ERROR]")) setLogOpen(true);
+  }, [logs]);
 
   const [clipBlob, setClipBlob] = useState<Blob | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
