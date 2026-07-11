@@ -1142,19 +1142,9 @@ function Dashboard() {
       if (burnIn) {
         moveToStage("burning");
         setProgress(0);
-        const dims = await getVideoDimensions(workingVideo);
-        const ass = cuesToAss(workingCues, {
-          fontSize,
-          outline: subOutline,
-          xPct: subX,
-          yPct: subY,
-          videoWidth: dims.width,
-          videoHeight: dims.height,
-          fontFamily,
-        });
-        const subbed = await burnSubtitles(workingVideo, ass, setProgress, { lowPerf: effLowPerf, maxHeight: effMaxHeight }, fontOverride);
+        const subbed = await burnClipWithCurrentSettings(workingVideo, workingCues, "full pipeline", setProgress);
         checkCancel();
-        setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
+        setSubbedBlob(subbed);
         setProgress(1);
       }
 
@@ -1390,19 +1380,9 @@ function Dashboard() {
 
       moveToStage("burning");
       setProgress(0);
-      const dims = await getVideoDimensions(clip);
-      const ass = cuesToAss(remapped, {
-        fontSize,
-        outline: subOutline,
-        xPct: subX,
-        yPct: subY,
-        videoWidth: dims.width,
-        videoHeight: dims.height,
-        fontFamily,
-      });
-      const subbed = await burnSubtitles(clip, ass, setProgress, { lowPerf: effLowPerf, maxHeight: effMaxHeight }, fontOverride);
+      const subbed = await burnClipWithCurrentSettings(clip, remapped, "cut selected", setProgress);
       checkCancel();
-      setSubbedBlob(new Blob([subbed as BlobPart], { type: "video/mp4" }));
+      setSubbedBlob(subbed);
       setProgress(1);
 
       moveToStage("done");
