@@ -1637,22 +1637,8 @@ function Dashboard() {
                                 </span>
                               )}
                               <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-6 px-2 text-[11px]"
-                                  onClick={() => setStartFromSeconds(c.start)}
-                                >
-                                  ▸ Start
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-6 px-2 text-[11px]"
-                                  onClick={() => setEndFromSeconds(c.end)}
-                                >
-                                  End ◂
-                                </Button>
+                                {/* ▸ Start / End ◂ removed — they only fed the collapsed
+                                    Advanced segment editor and cluttered the row. */}
                                 <Button
                                   size="sm"
                                   variant="ghost"
