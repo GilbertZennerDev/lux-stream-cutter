@@ -14,6 +14,11 @@ const CreateUpload = z.object({
 
 const IdInput = z.object({ id: z.string().uuid() });
 
+const UpdateFamily = z.object({
+  id: z.string().uuid(),
+  family: z.string().min(1).max(120),
+});
+
 export interface FontRow {
   id: string;
   family: string;
