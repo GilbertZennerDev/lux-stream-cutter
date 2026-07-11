@@ -1081,9 +1081,9 @@ export async function burnSubtitles(
         "-y", outputName,
       ]);
       emitFfmpegLog("[BURN] MP4 created, verifying subtitle pixels…");
-      const metrics = await verifyBurnedSubtitlePixels(ffmpeg, inputName, outputName, verifyAss, perf, token);
+      const metrics = await verifyBurnedSubtitlePixels(ffmpeg, outputName, verifyAss, token);
       emitFfmpegLog(
-        `[BURN] Verified visible subtitles (mean diff ${metrics.meanAbsDiff.toFixed(2)}, strong ${(metrics.strongDiffFraction * 100).toFixed(2)}%)`,
+        `[BURN] Verified visible subtitles (mean diff ${metrics.meanAbsDiff.toFixed(2)}, strong ${(metrics.strongDiffFraction * 100).toFixed(2)}%, bright ${((metrics.brightPixelFraction ?? 0) * 100).toFixed(2)}%)`,
       );
       return await readOutputFile(ffmpeg, outputName, "Subtitle burn-in");
     };
@@ -1094,12 +1094,9 @@ export async function burnSubtitles(
     // renders without any burned subtitles. Rely on default stream
     // selection (best video + best audio) so `-vf` is applied correctly.
 
-    // NOTE: We intentionally do NOT use ffmpeg's `drawtext` filter here.
-    // ffmpeg.wasm's drawtext build crashes with "memory access out of bounds"
-    // when given many cues with `enable='between(t,...)'` expressions.
-    // Instead we go straight to libass, iterating every internal family name
-    // parsed from the uploaded font file so libass can match the real name
-    // (e.g. Whitney Book's PostScript/internal name differs from the UI label).
+    // NOTE: We intentionally keep the burn path deterministic and libass-only.
+    // ffmpeg.wasm is prone to memory crashes after many complex retries, so we
+    // try the matched uploaded face once, then the built-in Noto fallback.
 
     const sf = scaleFilter(perf);
     const firstProbe = firstVisibilityProbe(assText);
@@ -1144,16 +1141,15 @@ export async function burnSubtitles(
     let lastError: unknown = null;
     const finalCandidates = uniqueFontCandidates([
       selected,
-      ...candidates.filter((candidate) => candidate.source === "fallback"),
+      ...(selected.source === "uploaded" ? [fallbackFontCandidates()[0]] : []),
     ]);
     for (const candidate of finalCandidates) {
       const safeAss = replaceAssStyleFont(assText, candidate);
       await ffmpeg.writeFile(subsName, new TextEncoder().encode(safeAss));
       const subsFilter = subtitleFilter(subsName);
-      const variants = uniqueStrings([
-        ["setpts=PTS-STARTPTS", subsFilter, sf].filter(Boolean).join(","),
-        ["setpts=PTS-STARTPTS", sf, subsFilter].filter(Boolean).join(","),
-      ]);
+      const variants = sf
+        ? [["setpts=PTS-STARTPTS", sf, subsFilter].join(",")]
+        : [["setpts=PTS-STARTPTS", subsFilter].join(",")];
       for (let i = 0; i < variants.length; i++) {
         try {
           emitFfmpegLog(`[FONT] Burning with ${candidate.family}${candidate.bold ? " (bold)" : ""}`);
@@ -1162,7 +1158,7 @@ export async function burnSubtitles(
           lastError = err;
           if (err instanceof BurnVerificationError) {
             emitFfmpegLog(`[BURN] Verification failed for ${candidate.family}: ${err.message}`);
-            emitFfmpegLog("[BURN] Retrying with next burn graph/font…");
+            if (candidate.source === "uploaded") emitFfmpegLog("[BURN] Retrying with built-in fallback font…");
             continue;
           }
           emitFfmpegLog(`[BURN] Burn attempt failed for ${candidate.family}: ${err instanceof Error ? err.message : String(err)}`);
