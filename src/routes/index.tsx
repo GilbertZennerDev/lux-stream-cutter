@@ -188,6 +188,17 @@ function formatDownloadBytes(bytes: number): string {
   return `${mb.toFixed(1)} MB`;
 }
 
+function timeAgo(ts: number): string {
+  const secs = Math.max(1, Math.floor((Date.now() - ts) / 1000));
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 /**
  * Extract MP3 audio using the WebCodecs/Web Audio fast path when the perf
  * tier allows it, and fall back to ffmpeg.wasm otherwise. The fast path is
