@@ -416,20 +416,38 @@ function RecordingsPage() {
           </Card>
         )}
 
-        {grouped.map((group) => (
+        {grouped.map((group) => {
+          const readyIds = group.rows.filter((r) => r.status === "ready").map((r) => r.id);
+          const allReadySelected = readyIds.length > 0 && readyIds.every((id) => selected.has(id));
+          return (
           <Card key={group.date}>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">
-                Session · {group.date}
-                <span className="ml-3 text-xs font-normal text-muted-foreground">
+              <CardTitle className="text-base flex items-center gap-3 flex-wrap">
+                <span>Session · {group.date}</span>
+                <span className="text-xs font-normal text-muted-foreground">
                   {group.rows.length} chunks · {formatBytes(group.totalBytes)}
                 </span>
+                {readyIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => selectWholeSession(group)}
+                    className="ml-auto text-[11px] px-2 py-0.5 rounded-full border hover:bg-muted transition-colors font-normal"
+                  >
+                    {allReadySelected ? "Deselect session" : "Select whole session"}
+                  </button>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="divide-y">
                 {group.rows.map((r) => (
-                  <div key={r.id} className="py-2 flex items-center gap-3">
+                  <div key={r.id} className={"py-2 flex items-center gap-3 " + (selected.has(r.id) ? "bg-primary/5 -mx-2 px-2 rounded" : "")}>
+                    <Checkbox
+                      checked={selected.has(r.id)}
+                      disabled={r.status !== "ready"}
+                      onCheckedChange={() => toggleSelected(r.id)}
+                      aria-label={`Select chunk ${r.chunk_index}`}
+                    />
                     <div className="w-16 text-xs font-mono text-muted-foreground">
                       #{String(r.chunk_index).padStart(3, "0")}
                     </div>
