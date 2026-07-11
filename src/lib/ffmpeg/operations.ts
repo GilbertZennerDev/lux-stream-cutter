@@ -114,7 +114,7 @@ interface FontCandidate {
 function subtitleFilter(subsName: string, candidate: FontCandidate): string {
   const filename = escapeFilterOption(subsName);
   const forceStyle = [
-    `FontName=${candidate.family.trim() || DEFAULT_FONT_FAMILY}`,
+    `Fontname=${candidate.family.trim() || DEFAULT_FONT_FAMILY}`,
     `Bold=${candidate.bold ? 1 : 0}`,
   ].join(",");
   return `subtitles=filename='${filename}':fontsdir='/fonts':force_style='${escapeFilterOption(forceStyle)}'`;
@@ -399,12 +399,26 @@ function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return out;
 }
 
+function uniqueFontCandidates(values: FontCandidate[]): FontCandidate[] {
+  const seen = new Set<string>();
+  const out: FontCandidate[] = [];
+  for (const value of values) {
+    const family = sanitizeAssFontFamily(value.family);
+    const key = `${family.toLowerCase()}|${value.bold ? 1 : 0}|${value.source}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...value, family });
+  }
+  return out;
+}
+
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
-async function fontNameCandidates(fontBytes: Uint8Array | undefined, fallbackFamily: string): Promise<string[]> {
-  if (!fontBytes) return [sanitizeAssFontFamily(fallbackFamily)];
+async function fontNameCandidates(fontBytes: Uint8Array | undefined, fallbackFamily: string): Promise<FontCandidate[]> {
+  const fallback = sanitizeAssFontFamily(fallbackFamily);
+  if (!fontBytes) return [{ family: fallback, bold: false, source: "fallback" }];
   try {
     const opentype = await import("opentype.js");
     const font = opentype.parse(toArrayBuffer(fontBytes));
@@ -429,18 +443,27 @@ async function fontNameCandidates(fontBytes: Uint8Array | undefined, fallbackFam
 
     // Uploaded OTFs commonly match in ffmpeg by internal Full/PostScript names
     // (for example "Whitney-Book") rather than the CSS display family.
-    const candidates = uniqueStrings([
+    const names = uniqueStrings([
+      fallbackFamily,
       fullName,
       postScriptName,
       familyWithPreferredStyle,
       familyWithStyle,
       preferredFamily,
       fontFamily,
-      fallbackFamily,
     ]).map(sanitizeAssFontFamily);
-    return candidates.length > 0 ? candidates : [sanitizeAssFontFamily(fallbackFamily)];
+
+    const candidates = uniqueFontCandidates([
+      // Browser preview can synthesize semibold, but libass often refuses to
+      // match a regular/book OTF when ASS asks for Bold=1. Prefer normal
+      // weight for uploaded files, then try bold only if the font resolver says
+      // that is what the file wants.
+      ...names.map((family) => ({ family, bold: false, source: "uploaded" as const })),
+      ...names.map((family) => ({ family, bold: true, source: "uploaded" as const })),
+    ]);
+    return candidates.length > 0 ? candidates : [{ family: fallback, bold: false, source: "fallback" }];
   } catch {
-    return [sanitizeAssFontFamily(fallbackFamily)];
+    return [{ family: fallback, bold: false, source: "uploaded" }];
   }
 }
 
@@ -554,9 +577,15 @@ function directFontDrawtextChain(assText: string, fontPath: string, perf: PerfOp
   ].filter(Boolean).join(",");
 }
 
-function replaceAssFontFamily(assText: string, family: string): string {
-  const safeFamily = sanitizeAssFontFamily(family);
-  return assText.replace(/^Style:\s*Default,([^,]*),(.*)$/m, `Style: Default,${safeFamily},$2`);
+function replaceAssStyleFont(assText: string, candidate: FontCandidate): string {
+  const safeFamily = sanitizeAssFontFamily(candidate.family);
+  return assText.replace(/^Style:\s*(.*)$/m, (_line, payload: string) => {
+    const parts = String(payload).split(",");
+    if (parts.length < 8) return `Style: ${payload}`;
+    parts[1] = safeFamily;
+    parts[7] = candidate.bold ? "1" : "0";
+    return `Style: ${parts.join(",")}`;
+  });
 }
 
 
