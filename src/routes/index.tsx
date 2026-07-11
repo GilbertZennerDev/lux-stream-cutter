@@ -1716,19 +1716,35 @@ function Dashboard() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mb-2">
-                      Zeih den Text am Preview, oder benotz d'Sliders. Iwwerholl gëtt op déi geschnidde Videosgréisst
-                      berechent.
+                      {sourcePreviewUrl
+                        ? "Play the video and drag the caption directly on the real frame — what you see is what gets burned in."
+                        : "Zeih den Text am Preview, oder benotz d'Sliders. Iwwerholl gëtt op déi geschnidde Videosgréisst berechent."}
                     </p>
-                    <SubtitlePreview
-                      xPct={subX}
-                      yPct={subY}
-                      fontSize={fontSize}
-                      outline={subOutline}
-                      onChange={(x, y) => {
-                        setSubX(x);
-                        setSubY(y);
-                      }}
-                    />
+                    {sourcePreviewUrl ? (
+                      <LiveSubtitleOverlay
+                        src={sourcePreviewUrl}
+                        xPct={subX}
+                        yPct={subY}
+                        fontSize={fontSize}
+                        outline={subOutline}
+                        cues={cues.length > 0 ? cues : undefined}
+                        onChange={(x, y) => {
+                          setSubX(x);
+                          setSubY(y);
+                        }}
+                      />
+                    ) : (
+                      <SubtitlePreview
+                        xPct={subX}
+                        yPct={subY}
+                        fontSize={fontSize}
+                        outline={subOutline}
+                        onChange={(x, y) => {
+                          setSubX(x);
+                          setSubY(y);
+                        }}
+                      />
+                    )}
                     <div className="mt-3 space-y-3">
                       <div>
                         <div className="flex items-center justify-between">
