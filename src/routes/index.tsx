@@ -63,6 +63,10 @@ import {
 } from "@/lib/hls/shared-recorder";
 import { SubtitlePreview } from "@/components/cutter/SubtitlePreview";
 import { LiveSubtitleOverlay } from "@/components/cutter/LiveSubtitleOverlay";
+import { CuePreview } from "@/components/cutter/CuePreview";
+import { CuePositionDialog } from "@/components/cutter/CuePositionDialog";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Maximize2, LockKeyhole, MoveHorizontal, MoveVertical } from "lucide-react";
 import { SyncCalibrator } from "@/components/cutter/SyncCalibrator";
 import { PerfSelector } from "@/components/cutter/PerfSelector";
 import { usePerfTier } from "@/lib/perf/usePerfTier";
@@ -524,6 +528,8 @@ function Dashboard() {
   const [audioOffsetSec, setAudioOffsetSec] = useState(0);
   const [syncOpen, setSyncOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [lockAxis, setLockAxis] = useState<"free" | "x" | "y">("free");
+  const [editorCueIdx, setEditorCueIdx] = useState<number | null>(null);
 
   const perfState = usePerfTier();
   const perf = perfState.profile;
@@ -560,6 +566,10 @@ function Dashboard() {
     setCues((prev) => prev.map((c) => (c.index === idx ? { ...c, ...patch } : c)));
   const resetCuePos = (idx: number) =>
     setCues((prev) => prev.map((c) => (c.index === idx ? { ...c, xPct: undefined, yPct: undefined } : c)));
+  const applyPosToFollowing = (fromIdx: number, xPct: number, yPct: number) =>
+    setCues((prev) => prev.map((c) => (c.index >= fromIdx ? { ...c, xPct, yPct } : c)));
+  const applyPosToAll = (xPct: number, yPct: number) =>
+    setCues((prev) => prev.map((c) => ({ ...c, xPct, yPct })));
   const updateCueText = (idx: number, text: string) =>
     setCues((prev) => {
       const next = prev.map((c) => (c.index === idx ? { ...c, text } : c));
@@ -637,6 +647,7 @@ function Dashboard() {
     setMaxChars(saved.maxChars);
     setAudioOffsetSec(saved.audioOffsetSec);
     setBurnIn(saved.burnIn);
+    if (saved.lockAxis) setLockAxis(saved.lockAxis);
   };
 
   const acceptRestore = async () => {
@@ -678,6 +689,7 @@ function Dashboard() {
         maxChars,
         audioOffsetSec,
         burnIn,
+        lockAxis,
       }).catch(() => {});
     }, 800);
     return () => {
@@ -685,7 +697,7 @@ function Dashboard() {
     };
   }, [
     sessionKey, file, rawCues, cues, selectedCues, mode, segments,
-    subX, subY, fontSize, subOutline, maxSentences, maxChars, audioOffsetSec, burnIn,
+    subX, subY, fontSize, subOutline, maxSentences, maxChars, audioOffsetSec, burnIn, lockAxis,
   ]);
 
   const resetSession = async () => {
@@ -1527,8 +1539,16 @@ function Dashboard() {
                                 {formatSeconds(c.start)} – {formatSeconds(c.end)}
                               </button>
                               {hasOverride && (
-                                <span className="text-[10px] font-mono px-1.5 rounded bg-primary/15 text-primary">
+                                <span className="text-[10px] font-mono px-1.5 rounded bg-primary/15 text-primary inline-flex items-center gap-1">
                                   pos {Math.round(cx)},{Math.round(cy)}
+                                  <button
+                                    type="button"
+                                    className="opacity-70 hover:opacity-100"
+                                    title="Reset to default position"
+                                    onClick={() => resetCuePos(c.index)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
                                 </span>
                               )}
                               <div className="ml-auto flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
@@ -1548,6 +1568,17 @@ function Dashboard() {
                                 >
                                   End ◂
                                 </Button>
+                                {sourcePreviewUrl && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-2 text-[11px]"
+                                    title="Open big position editor"
+                                    onClick={() => setEditorCueIdx(c.index)}
+                                  >
+                                    <Maximize2 className="h-3 w-3 mr-1" /> Edit
+                                  </Button>
+                                )}
                               </div>
                             </div>
                             <Textarea
@@ -1578,14 +1609,28 @@ function Dashboard() {
                                     </Button>
                                   )}
                                 </div>
-                                <SubtitlePreview
-                                  xPct={cx}
-                                  yPct={cy}
-                                  fontSize={Math.min(fontSize, 28)}
-                                  outline={subOutline}
-                                  sample={c.text.split(/\r?\n/)[0].slice(0, 60) || "…"}
-                                  onChange={(x, y) => updateCuePos(c.index, { xPct: x, yPct: y })}
-                                />
+                                {sourcePreviewUrl ? (
+                                  <CuePreview
+                                    videoSrc={sourcePreviewUrl}
+                                    time={(c.start + c.end) / 2}
+                                    xPct={cx}
+                                    yPct={cy}
+                                    fontSize={fontSize}
+                                    outline={subOutline}
+                                    text={c.text}
+                                    lockAxis={lockAxis}
+                                    onChange={(patch) => updateCuePos(c.index, patch)}
+                                  />
+                                ) : (
+                                  <SubtitlePreview
+                                    xPct={cx}
+                                    yPct={cy}
+                                    fontSize={Math.min(fontSize, 28)}
+                                    outline={subOutline}
+                                    sample={c.text.split(/\r?\n/)[0].slice(0, 60) || "…"}
+                                    onChange={(x, y) => updateCuePos(c.index, { xPct: x, yPct: y })}
+                                  />
+                                )}
                                 <div className="grid grid-cols-2 gap-2">
                                   <div>
                                     <div className="flex items-center justify-between">
@@ -1661,10 +1706,12 @@ function Dashboard() {
                     fontSize={fontSize}
                     outline={subOutline}
                     cues={cues.length > 0 ? cues : undefined}
+                    lockAxis={lockAxis}
                     onChange={(x, y) => {
                       setSubX(x);
                       setSubY(y);
                     }}
+                    onCueChange={(idx, patch) => updateCuePos(idx, patch)}
                   />
                 ) : (
                   <SubtitlePreview
@@ -1678,6 +1725,28 @@ function Dashboard() {
                     }}
                   />
                 )}
+                <div className="mt-3 flex items-center gap-2">
+                  <Label className="text-xs">Lock drag axis</Label>
+                  <ToggleGroup
+                    type="single"
+                    size="sm"
+                    value={lockAxis}
+                    onValueChange={(v) => v && setLockAxis(v as "free" | "x" | "y")}
+                  >
+                    <ToggleGroupItem value="free" aria-label="Free">
+                      <LockKeyhole className="h-3 w-3 mr-1 opacity-40" /> Free
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="y" aria-label="Vertical only">
+                      <MoveVertical className="h-3 w-3 mr-1" /> Y only
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="x" aria-label="Horizontal only">
+                      <MoveHorizontal className="h-3 w-3 mr-1" /> X only
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                  <span className="text-[11px] text-muted-foreground ml-2">
+                    Restrict dragging so you only nudge one direction.
+                  </span>
+                </div>
                 <div className="mt-3 space-y-3">
                   <div>
                     <div className="flex items-center justify-between">
@@ -2135,6 +2204,31 @@ function Dashboard() {
         offset={audioOffsetSec}
         setOffset={setAudioOffsetSec}
         perf={perf}
+      />
+
+      <CuePositionDialog
+        open={editorCueIdx !== null}
+        onOpenChange={(v) => { if (!v) setEditorCueIdx(null); }}
+        cue={editorCueIdx !== null ? cues.find((c) => c.index === editorCueIdx) ?? null : null}
+        videoSrc={sourcePreviewUrl}
+        defaultX={subX}
+        defaultY={subY}
+        fontSize={fontSize}
+        outline={subOutline}
+        lockAxis={lockAxis}
+        onLockAxisChange={setLockAxis}
+        onChange={(patch) => { if (editorCueIdx !== null) updateCuePos(editorCueIdx, patch); }}
+        onReset={() => { if (editorCueIdx !== null) resetCuePos(editorCueIdx); }}
+        onApplyToFollowing={(x, y) => {
+          if (editorCueIdx !== null) {
+            applyPosToFollowing(editorCueIdx, x, y);
+            toast.success("Position applied to following cues");
+          }
+        }}
+        onApplyToAll={(x, y) => {
+          applyPosToAll(x, y);
+          toast.success("Position applied to all cues");
+        }}
       />
 
       <footer className="mx-auto max-w-7xl px-6 py-8 text-xs text-muted-foreground">

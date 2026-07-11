@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LockKeyhole } from "lucide-react";
 import type { SrtCue } from "@/lib/subtitles/luxasrToSrt";
+import type { LockAxis } from "./CuePreview";
 
 interface Props {
   src: string;
@@ -9,8 +11,12 @@ interface Props {
   outline: number;  // px
   cues?: SrtCue[];
   defaultSample?: string;
+  /** Global default-position setter (used when no cue is active). */
   onChange: (x: number, y: number) => void;
+  /** Per-cue override setter. When a cue is active, dragging updates that cue. */
+  onCueChange?: (cueIndex: number, patch: { xPct?: number; yPct?: number }) => void;
   onTimeUpdate?: (t: number) => void;
+  lockAxis?: LockAxis;
   /** Optional external ref for parent-controlled seeking. */
   videoRef?: React.RefObject<HTMLVideoElement | null>;
 }
@@ -24,7 +30,8 @@ interface Props {
  * repositionable by drag or slider.
  */
 export function LiveSubtitleOverlay({
-  src, xPct, yPct, fontSize, outline, cues, defaultSample = "Beispill Ennertitlen", onChange, onTimeUpdate, videoRef,
+  src, xPct, yPct, fontSize, outline, cues, defaultSample = "Beispill Ennertitlen",
+  onChange, onCueChange, onTimeUpdate, lockAxis = "free", videoRef,
 }: Props) {
   const internalVideoRef = useRef<HTMLVideoElement>(null);
   const videoElRef = videoRef ?? internalVideoRef;
@@ -44,19 +51,31 @@ export function LiveSubtitleOverlay({
     return () => ro.disconnect();
   }, []);
 
+  // Pick the cue that covers the current time. We compute this here so the
+  // drag handler can route to per-cue vs global setters.
+  const activeCue = cues?.find((c) => currentTime >= c.start && currentTime <= c.end);
+
   const updateFromEvent = useCallback(
     (clientX: number, clientY: number) => {
       const box = boxRef.current;
       if (!box) return;
       const r = box.getBoundingClientRect();
-      const x = ((clientX - r.left) / r.width) * 100;
-      const y = ((clientY - r.top) / r.height) * 100;
-      onChange(
-        Math.round(Math.max(0, Math.min(100, x))),
-        Math.round(Math.max(0, Math.min(100, y))),
-      );
+      const x = Math.round(Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100)));
+      const y = Math.round(Math.max(0, Math.min(100, ((clientY - r.top) / r.height) * 100)));
+      // If a cue is active AND the parent gave us a per-cue setter, edit the cue.
+      if (activeCue && onCueChange) {
+        const patch: { xPct?: number; yPct?: number } = {};
+        if (lockAxis !== "y") patch.xPct = x;
+        if (lockAxis !== "x") patch.yPct = y;
+        if (patch.xPct !== undefined || patch.yPct !== undefined) onCueChange(activeCue.index, patch);
+        return;
+      }
+      // Otherwise edit the global default (respect lock by reusing current values).
+      const nx = lockAxis === "y" ? xPct : x;
+      const ny = lockAxis === "x" ? yPct : y;
+      onChange(nx, ny);
     },
-    [onChange],
+    [activeCue, onCueChange, onChange, lockAxis, xPct, yPct],
   );
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -74,9 +93,7 @@ export function LiveSubtitleOverlay({
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
   };
 
-  // Pick the cue that covers the current time (binary search would be
-  // overkill — typical projects have <500 cues).
-  const activeCue = cues?.find((c) => currentTime >= c.start && currentTime <= c.end);
+  // Text + effective position for the currently-drawn caption.
   const text = activeCue?.text?.trim() || defaultSample;
   const activeX = activeCue?.xPct ?? xPct;
   const activeY = activeCue?.yPct ?? yPct;
@@ -119,7 +136,9 @@ export function LiveSubtitleOverlay({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        className="absolute inset-0 cursor-crosshair touch-none"
+        className={`absolute inset-0 touch-none ${
+          lockAxis === "x" ? "cursor-ew-resize" : lockAxis === "y" ? "cursor-ns-resize" : "cursor-crosshair"
+        }`}
         style={{ bottom: 40 /* clear native <video> controls */ }}
         role="application"
         aria-label="Drag to reposition subtitle"
@@ -139,11 +158,19 @@ export function LiveSubtitleOverlay({
         </span>
         <div className="absolute h-px w-full bg-white/10 pointer-events-none" style={{ top: `${activeY}%` }} />
         <div className="absolute w-px h-full bg-white/10 pointer-events-none" style={{ left: `${activeX}%` }} />
-        {activeCue && (
-          <div className="absolute top-1 left-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/80 text-primary-foreground pointer-events-none">
-            cue #{activeCue.index}
-          </div>
-        )}
+        <div className="absolute top-1 left-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/80 text-primary-foreground pointer-events-none flex items-center gap-1">
+          {activeCue ? (
+            <>editing cue #{activeCue.index}</>
+          ) : (
+            <>editing default position</>
+          )}
+          {lockAxis !== "free" && (
+            <span className="ml-1 flex items-center gap-0.5 opacity-90">
+              <LockKeyhole className="h-2.5 w-2.5" />
+              {lockAxis === "x" ? "X" : "Y"}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

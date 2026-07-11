@@ -30,6 +30,7 @@ export interface CutterSessionState {
   maxChars: number;
   audioOffsetSec: number;
   burnIn: boolean;
+  lockAxis?: "free" | "x" | "y";
 }
 
 interface CachedBlob {
