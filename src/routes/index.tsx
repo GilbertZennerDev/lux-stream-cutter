@@ -520,6 +520,24 @@ function Dashboard() {
   };
   const [mode, setMode] = useState<Mode>("full");
   const [fontSize, setFontSize] = useState(28);
+  const [subFont, setSubFont] = useState<string>("default");
+  const fontsListQuery = useQuery({
+    queryKey: ["fonts", "list"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("fonts")
+        .select("id,family,format,is_default")
+        .eq("status", "ready")
+        .order("family", { ascending: true });
+      if (error) throw error;
+      return data as { id: string; family: string; format: string; is_default: boolean }[];
+    },
+  });
+  useEffect(() => {
+    if (subFont !== "default" || !fontsListQuery.data) return;
+    const def = fontsListQuery.data.find((f) => f.is_default);
+    if (def) setSubFont(def.family);
+  }, [fontsListQuery.data, subFont]);
   const [subX, setSubX] = useState(50); // % from left (centre of text)
   const [subY, setSubY] = useState(88); // % from top (centre of text)
   const [subOutline, setSubOutline] = useState(2); // px
