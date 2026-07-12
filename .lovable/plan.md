@@ -1,39 +1,53 @@
-## Root cause
+## Goal
 
-The per-block preview and the final burned video differ because of **line wrapping**, not font size:
+Add a Fonts manager where uploaded font files land **as full binary content** in the private `fonts` storage bucket, so we can later fetch the actual file bytes (e.g. to feed ffmpeg's `/fonts` dir for burn-in). Today the `fonts` table + `fonts` bucket exist but no upload UI exists, so nothing ever writes real bytes.
 
-- **Preview** (`CuePreview.tsx`, `LiveSubtitleOverlay.tsx`) renders each caption inside a CSS box with `max-width: 92%` and `whitespace-pre-line`. Long cues wrap automatically onto 2–3 lines.
-- **Burn-in** (`cuesToAss` in `src/lib/ffmpeg/operations.ts`) writes the ASS header with `WrapStyle: 2`, which means "no automatic wrapping — only explicit `\N` breaks the line". Long cues render as one very wide single line that spills far past what the preview showed.
+## Where
 
-Font-size scaling was already fixed last turn, so short cues already match. The remaining mismatch is 100% due to wrapping. Bold/font-family differences are negligible visually.
+New Fonts section on `src/routes/admin.tsx` (super-admin only, matches existing gating). No changes to other routes.
 
-## Fix
+## Upload flow (client-side, private bucket)
 
-Pre-wrap the cue text in JavaScript before it goes into the ASS file, using the exact same width budget the preview uses (92 % of source video width) and the same per-cue font size. Insert `\N` at the chosen break points and keep `WrapStyle: 2` so ffmpeg respects our breaks verbatim.
+For each accepted file (`.ttf`, `.otf`, `.woff`, `.woff2`):
 
-Steps in `src/lib/ffmpeg/operations.ts`:
+1. Derive `family` from filename (strip extension, replace `_`/`-` runs with spaces), `format` from extension, `size_bytes` from `file.size`.
+2. `storage_path = ${user.id}/${crypto.randomUUID()}-${safeName}`.
+3. `supabase.storage.from("fonts").upload(storage_path, file, { contentType: file.type || "font/*", upsert: false })` — this streams the **actual File** object, so the bucket object contains the exact bytes of the uploaded file (verifiable later via `download()` / signed URL).
+4. On success, `supabase.from("fonts").insert({ family, original_filename: file.name, storage_path, format, size_bytes, status: "ready", uploaded_by: user.id })`.
+5. On DB-insert failure, roll back with `storage.from("fonts").remove([storage_path])` so we never leave orphaned objects.
 
-1. Add a helper `wrapTextForAss(text, fontSizePx, maxWidthPx)` that:
-   - Uses an offscreen `<canvas>` 2D context with font `bold ${fontSize}px "Noto Sans", sans-serif` (matches burn Bold=1 + Noto Sans and closely matches the preview's `font-semibold`).
-   - Greedy word-wrap: builds lines word-by-word, starts a new line when `measureText(line + " " + word).width > maxWidthPx`.
-   - Preserves any explicit `\n` the user typed as hard breaks.
-   - Returns the text with `\n` between wrapped lines; the existing `escapeAssText` already converts `\n` → `\N`.
+Upload queue runs files sequentially with per-file progress + toast; a shared React Query `["fonts"]` list is invalidated after each success.
 
-2. In `cuesToAss`, for each cue compute `maxWidthPx = Math.round(w * 0.92)` (same 92 % the preview uses) and pass the cue's effective font size (currently the shared `style.fontSize` — per-cue font override isn't in the model, so shared size is correct).
+## List / manage
 
-3. Guard for SSR / no-canvas: if `typeof document === "undefined"` or `getContext("2d")` returns null, fall back to a character-count heuristic (`~ maxWidthPx / (fontSize * 0.55)` chars per line) so the burn worker path stays deterministic.
+- `useQuery(["fonts"])` → `select * from fonts order by created_at desc`.
+- Row shows: family, format badge, size (KB/MB), uploaded date, "Default" toggle, Delete button.
+- **Default toggle**: sets `is_default=true` on the row; a small server function (or a two-step client update wrapped in a transaction-ish sequence) first clears all `is_default=true` then sets the chosen row. Uses the existing partial-unique index `fonts_only_one_default`. Since RLS only lets the uploader update their own row, the toggle is disabled for rows owned by other admins and shows a hint. (Out of scope: cross-admin default management.)
+- **Delete**: `storage.remove([storage_path])` then `delete from fonts where id=…`. RLS already restricts to uploader.
 
-4. Keep `WrapStyle: 2` (respect our explicit breaks; libass won't add its own).
+## Storage bucket policies
 
-No changes to the preview components — the preview is what the user is anchoring on, so we make the burn match it, not the other way around.
+The `fonts` bucket already exists and is private. Add RLS on `storage.objects` (via migration in build mode) so authenticated users can `INSERT`/`SELECT`/`DELETE` inside `bucket_id = 'fonts'` scoped to their own top-level folder (`auth.uid()::text = (storage.foldername(name))[1]`). Needed because private buckets have no default write policy.
+
+## Reading the file content later (out of scope for this task, but the plan enables it)
+
+- Client: `supabase.storage.from("fonts").download(storage_path)` → `Blob` → `ArrayBuffer` → `ffmpeg.writeFile("/fonts/<family>.<ext>", bytes)`.
+- Server (worker/burn): server-side `supabaseAdmin.storage.from("fonts").download(...)` returns raw bytes.
+
+This task only guarantees the bytes are stored; the burn-side hookup stays for a follow-up.
+
+## Files
+
+- **New** `src/components/admin/FontsManager.tsx` — dropzone + list + row actions (dropzone patterned after `PremiereDropzone`).
+- **Edit** `src/routes/admin.tsx` — mount `<FontsManager />` as a new `Card` section.
+- **Migration** — add three RLS policies on `storage.objects` for bucket `fonts` (insert/select/delete for `authenticated`, folder-scoped to `auth.uid()`).
 
 ## Verification
 
-- Typecheck with `tsgo --noEmit`.
-- Manually: a long cue that wraps to 3 lines in the transcript-row preview should burn as the same 3 lines at the same positions in the exported MP4.
+- Upload a `.ttf`, then in the shell: `psql -c "select storage_path, size_bytes from fonts order by created_at desc limit 1"` and check that `size_bytes` matches the local file; download via signed URL and `sha256sum` the bytes vs the original to prove full content is stored (not just the name).
+- `tsgo --noEmit` clean.
 
 ## Out of scope
 
-- Per-cue font-size overrides (not in the data model today).
-- Switching the preview font to Noto Sans WOFF (system sans is visually close enough; would add a font download to every list row).
-- Changing wrap width from 92 % (matches current preview `max-width`).
+- Wiring uploaded fonts into the burn pipeline (`operations.ts` still uses the bundled Noto Sans).
+- Non-admin upload access, font previews, per-project font selection.
