@@ -22,6 +22,7 @@ import {
   sendPasswordReset,
   updateGroup,
 } from "@/lib/admin.functions";
+import { FontsManager } from "@/components/admin/FontsManager";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
