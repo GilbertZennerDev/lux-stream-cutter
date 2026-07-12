@@ -22,6 +22,7 @@ import {
   sendPasswordReset,
   updateGroup,
 } from "@/lib/admin.functions";
+import { FontsManager } from "@/components/admin/FontsManager";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -79,15 +80,18 @@ function AdminContent() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6 grid gap-6 md:grid-cols-[320px_1fr]">
-        <GroupsList selectedGroupId={selectedGroupId} onSelect={setSelectedGroupId} />
-        {selectedGroupId ? (
-          <GroupDetail groupId={selectedGroupId} onDeleted={() => setSelectedGroupId(null)} />
-        ) : (
-          <div className="border rounded-lg p-6 text-sm text-muted-foreground grid place-items-center min-h-[240px]">
-            Select or create a group to manage its members.
-          </div>
-        )}
+      <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+        <div className="grid gap-6 md:grid-cols-[320px_1fr]">
+          <GroupsList selectedGroupId={selectedGroupId} onSelect={setSelectedGroupId} />
+          {selectedGroupId ? (
+            <GroupDetail groupId={selectedGroupId} onDeleted={() => setSelectedGroupId(null)} />
+          ) : (
+            <div className="border rounded-lg p-6 text-sm text-muted-foreground grid place-items-center min-h-[240px]">
+              Select or create a group to manage its members.
+            </div>
+          )}
+        </div>
+        <FontsManager />
       </main>
     </div>
   );
