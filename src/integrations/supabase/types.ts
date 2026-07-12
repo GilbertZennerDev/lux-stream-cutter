@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      fonts: {
+        Row: {
+          created_at: string
+          family: string
+          format: string
+          id: string
+          is_default: boolean
+          original_filename: string | null
+          size_bytes: number
+          status: string
+          storage_path: string
+          uploaded_by: string
+        }
+        Insert: {
+          created_at?: string
+          family: string
+          format: string
+          id?: string
+          is_default?: boolean
+          original_filename?: string | null
+          size_bytes?: number
+          status?: string
+          storage_path: string
+          uploaded_by: string
+        }
+        Update: {
+          created_at?: string
+          family?: string
+          format?: string
+          id?: string
+          is_default?: boolean
+          original_filename?: string | null
+          size_bytes?: number
+          status?: string
+          storage_path?: string
+          uploaded_by?: string
+        }
+        Relationships: []
+      }
       group_members: {
         Row: {
           created_at: string
