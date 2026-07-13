@@ -1,52 +1,60 @@
 ## Goal
 
-Use the font the user picks in the Cutter's new Font dropdown when ffmpeg burns subtitles, matching the shape:
+Prove the uploaded font file's actual bytes end up on ffmpeg's virtual FS and are the ones libass renders with, by switching the burn to the explicit `FontFile=<absolute path>` form the user asked for.
 
-```
-ass=subs.ass:fontsdir=/fonts   +   Style ...,Fontname=<FamilyFromRow>,...
-```
+Today `burnSubtitles` writes the downloaded bytes to `/fonts/<family>.<ext>` and relies on libass resolving `Fontname` via `fontsdir=/fonts`. That's indirect — if the font's internal family name doesn't match the row's `family` string, libass silently falls back to Noto Sans and the burn looks like the custom font "didn't load" even though the bytes are on disk.
 
-Today `burnSubtitles` always writes only `NotoSans-Regular.ttf` to `/fonts` and `cuesToAss` hardcodes `FONT_FAMILY = "Noto Sans"` in the ASS style line, so the dropdown selection is silently ignored.
+Switch to passing the file path directly so there's no name-matching guesswork.
 
 ## Changes
 
 ### 1. `src/lib/ffmpeg/operations.ts`
 
-- Add a new type describing a custom font to install:
+- `ensureFont` keeps its current behaviour (download from `fonts` bucket, write to `/fonts/<sanitizedFamily>.<format>`, cache per ffmpeg instance, log byte counts). Additionally return the written absolute path so callers can pass it to libass:
   ```ts
-  export interface CustomFont {
-    family: string;         // used as ASS Fontname
-    storagePath: string;    // path inside the `fonts` bucket
-    format: string;         // ttf | otf | woff | woff2
-    bytes?: Uint8Array;     // optional pre-fetched content
-  }
+  async function ensureFont(ffmpeg, custom?): Promise<{ fontFile?: string }>
   ```
-- Extend `ensureFont(ffmpeg, custom?)`:
-  - Always ensures `/fonts` exists and the bundled Noto Sans fallback is present (kept as safety net if libass can't resolve the custom family).
-  - When `custom` is provided, write its bytes to `/fonts/<sanitizedFamily>.<format>`. Cache by `(ffmpeg, family+storagePath)` in a `WeakMap<object, Set<string>>` so repeat burns skip the download.
-  - If `custom.bytes` isn't supplied, download from Supabase: `supabase.storage.from("fonts").download(storagePath)` → `arrayBuffer()` → `Uint8Array`. Import `supabase` from `@/integrations/supabase/client`.
-- Extend `cuesToAss(cues, style, fontFamily?)`: use `fontFamily ?? FONT_FAMILY` in the `Style: Default,<font>,...` line. Also update `getWrapCtx` to accept the family so wrap widths stay consistent with the preview (falls back to Noto Sans when none).
-- Extend `burnSubtitles(video, assText, onP?, perf?, customFont?)`: pass `customFont` through to `ensureFont`. `fontsdir=/fonts` stays as is — libass will find the new file there.
+  Returns `{ fontFile: "/fonts/<sanitized>.<ext>" }` when a custom font is installed, `{}` otherwise.
+
+- `cuesToAss` stops embedding the family in the ASS `Style:` line for custom fonts — the `force_style` override on the ffmpeg command will win anyway. Keep Noto Sans as the in-file style so previews without a custom font stay unchanged.
+
+- `burnSubtitles(video, assText, onP?, perf?, customFont?)`:
+  - Call `const { fontFile } = await ensureFont(ffmpeg, customFont)`.
+  - Build the video filter using the `subtitles=` filter (which also reads .ass) plus `force_style` when we have a `fontFile`:
+    ```
+    subtitles=<subsName>:fontsdir=/fonts:force_style='FontFile=<fontFile>'
+    ```
+    Escape the single-quoted value so ffmpeg's filtergraph parser accepts it (colons and commas inside `force_style` must be `\:` and `\,`; the path itself has neither, but the wrapper is still needed).
+  - When there's no custom font, keep the current `ass=<subsName>:fontsdir=/fonts` filter so nothing regresses.
+  - Keep the existing scale-filter chaining (`scaleFilter` output prepended with a comma).
+  - Keep the existing `-map` avoidance note and encode args.
+
+- Add one more log right before `ffmpeg.exec` in `burnSubtitles`: `console.log("[burnSubtitles] vf =", vf, "customFont =", customFont?.family)` so we can see in the console that the exact path we wrote is the exact path handed to ffmpeg.
 
 ### 2. `src/routes/index.tsx`
 
-- Build a `resolveCustomFont()` helper right before each `burnSubtitles` call:
-  - If `subFont === "default"` → pass `undefined`.
-  - Otherwise find the row in `fontsListQuery.data` by `family === subFont`; return `{ family: row.family, storagePath: row.storage_path, format: row.format }`.
-- Pass the resolved font to both `cuesToAss(..., subFont === "default" ? undefined : subFont)` and `burnSubtitles(..., customFont)` at the two existing burn sites (~lines 1116/1124 and 1363/1371).
-- No change to the dropdown UI itself; `subFont` already holds the family string.
+No behaviour change. Still resolves the selected dropdown value to `{ family, storagePath, format }` and passes it to `burnSubtitles`. The `cuesToAss(..., fontFamily)` third argument becomes unused for custom fonts — leave the signature as-is so the call sites don't need edits.
 
 ### 3. No DB / storage / RLS changes
 
-The existing "authenticated can read fonts bucket" policy from the Fonts Manager migration already lets the Cutter download the file bytes.
+The `fonts` bucket read policy from the Fonts Manager migration is enough.
 
 ## Verification
 
-- `tsgo --noEmit` clean.
-- Upload a distinctive font (e.g. a display face) via Admin → Fonts, select it in Cutter's Font dropdown, burn a short clip: rendered subtitles visibly use the uploaded typeface (not Noto Sans).
-- Switching back to "Default" and burning again renders in Noto Sans.
+- Watch the browser console during a burn with a custom font selected:
+  - `[ensureFont] downloading "<family>" from storage: <path>`
+  - `[ensureFont] downloaded "<family>" (<fmt>) — <N> bytes in <ms>ms` — N should match the row's size in the DB (~27 KB for the Whitney faces).
+  - `[ensureFont] wrote /fonts/<family>.<ext> to ffmpeg FS — <N> bytes` — same N, proving the bytes round-tripped.
+  - `[burnSubtitles] vf = ...subtitles=...:force_style='FontFile=/fonts/<family>.<ext>' customFont = <family>` — proves the exact path is passed to ffmpeg.
+- The rendered subtitles in the exported MP4 visibly use the uploaded typeface. Switching the dropdown back to "Default" and burning again renders in Noto Sans.
+
+## Technical notes
+
+- libass accepts `FontFile=<absolute path>` inside `force_style`; combined with `fontsdir=/fonts` it also resolves any @font-face fallbacks the file references.
+- ffmpeg's `subtitles=` filter reads both .srt and .ass — our existing ASS text (with `\pos` positioning, `WrapStyle=2`, per-cue coords) is preserved.
+- `force_style` values are comma-separated inside single quotes; the file path has no commas or single quotes so no extra escaping is required beyond quoting the whole value.
 
 ## Out of scope
 
-- Live preview / `LiveSubtitleOverlay` / `CuePreview` using the custom font (they render in the browser via CSS, not via libass). That's a separate task — this plan only fixes the burned output.
-- Per-cue font overrides, font weight/italic controls, font subsetting.
+- Live preview (`LiveSubtitleOverlay` / `CuePreview`) using the custom font — still CSS-only.
+- Font weight / italic / per-cue overrides, font subsetting.
