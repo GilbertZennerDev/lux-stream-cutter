@@ -1115,6 +1115,7 @@ function Dashboard() {
         setProgress(0);
         const dims = await getVideoDimensions(workingVideo);
         const customFontRow = subFont !== "default" ? fontsListQuery.data?.find((f) => f.family === subFont) : undefined;
+        const fontFamily = subFont !== "default" ? (customFontRow?.family ?? subFont) : undefined;
         const ass = cuesToAss(workingCues, {
           fontSize,
           outline: subOutline,
@@ -1122,7 +1123,7 @@ function Dashboard() {
           yPct: subY,
           videoWidth: dims.width,
           videoHeight: dims.height,
-        }, customFontRow?.family);
+        }, fontFamily);
         const subbed = await burnSubtitles(
           workingVideo,
           ass,
