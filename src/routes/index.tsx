@@ -1128,7 +1128,7 @@ function Dashboard() {
           ass,
           setProgress,
           { lowPerf: effLowPerf, maxHeight: effMaxHeight },
-          customFontRow ? { family: customFontRow.family, storagePath: (customFontRow as { storage_path?: string }).storage_path ?? "", format: customFontRow.format } : undefined,
+          customFontRow ? { family: customFontRow.family, storagePath: customFontRow.storage_path, format: customFontRow.format } : undefined,
         );
 
         checkCancel();
