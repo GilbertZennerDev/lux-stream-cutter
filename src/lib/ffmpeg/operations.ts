@@ -340,7 +340,7 @@ function sanitizeFontFile(name: string) {
 async function ensureFont(
   ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>,
   custom?: CustomFont,
-) {
+): Promise<{ fontFile?: string }> {
   if (!baseFontLoadedFor.has(ffmpeg)) {
     try {
       await ffmpeg.createDir("/fonts");
@@ -351,14 +351,15 @@ async function ensureFont(
     await ffmpeg.writeFile("/fonts/NotoSans-Regular.ttf", bytes);
     baseFontLoadedFor.add(ffmpeg);
   }
-  if (!custom) return;
+  if (!custom) return {};
+  const filename = `/fonts/${sanitizeFontFile(custom.family)}.${custom.format}`;
   const key = `${custom.family}::${custom.storagePath}`;
   let loaded = customFontsLoadedFor.get(ffmpeg);
   if (!loaded) {
     loaded = new Set();
     customFontsLoadedFor.set(ffmpeg, loaded);
   }
-  if (loaded.has(key)) return;
+  if (loaded.has(key)) return { fontFile: filename };
   let bytes = custom.bytes;
   if (!bytes) {
     const { supabase } = await import("@/integrations/supabase/client");
@@ -373,7 +374,6 @@ async function ensureFont(
   } else {
     console.log(`[ensureFont] using pre-fetched bytes for "${custom.family}" — ${bytes.byteLength} bytes`);
   }
-  const filename = `/fonts/${sanitizeFontFile(custom.family)}.${custom.format}`;
   await ffmpeg.writeFile(filename, bytes);
   try {
     const written = await ffmpeg.readFile(filename);
@@ -384,7 +384,9 @@ async function ensureFont(
     console.warn(`[ensureFont] could not verify written file ${filename}:`, e);
   }
   loaded.add(key);
+  return { fontFile: filename };
 }
+
 
 
 export interface SubtitleStyle {
