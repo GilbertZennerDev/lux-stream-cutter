@@ -1917,6 +1917,7 @@ function Dashboard() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="default">Default (bundled Noto Sans)</SelectItem>
+                    <SelectItem value="Lato">Lato (built-in)</SelectItem>
                     {fontsListQuery.data?.map((f) => (
                       <SelectItem key={f.id} value={f.family}>
                         {f.family}
