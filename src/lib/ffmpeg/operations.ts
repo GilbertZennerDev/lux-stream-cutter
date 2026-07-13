@@ -601,41 +601,51 @@ export async function burnSubtitles(
 
 
   await ffmpeg.writeFile(inputName, await fetchFile(video));
-  await ffmpeg.writeFile(subsName, new TextEncoder().encode(assText));
-  const { fontFile } = await ensureFont(ffmpeg, customFont);
+  const { fontFile, realFamily: customRealFamily } = await ensureFont(ffmpeg, customFont);
 
-  // Bundle a built-in font (e.g. Lato) into /fonts and use FontFile= for it,
-  // so libass never has to guess. ffmpeg.wasm has no system fonts.
-  let builtinFontFile: string | undefined;
+  // Bundle a built-in font (e.g. Lato) into /fonts. ffmpeg.wasm has no system
+  // fonts, so anything other than Noto Sans must be shipped in.
+  let builtinRealFamily: string | undefined;
   if (!fontFile && builtinFontName && BUILTIN_FONTS[builtinFontName]) {
     const spec = BUILTIN_FONTS[builtinFontName];
     const filename = `/fonts/${sanitizeFontFile(builtinFontName)}.${spec.format}`;
     let loaded = customFontsLoadedFor.get(ffmpeg);
     if (!loaded) { loaded = new Set(); customFontsLoadedFor.set(ffmpeg, loaded); }
     const key = `builtin::${builtinFontName}`;
+    let bytes: Uint8Array | undefined;
     if (!loaded.has(key)) {
       const t0 = performance.now();
-      const bytes = await fetchFile(spec.url);
+      bytes = await fetchFile(spec.url);
       await ffmpeg.writeFile(filename, bytes);
       console.log(`[burnSubtitles] bundled built-in "${builtinFontName}" — ${bytes.byteLength} bytes in ${Math.round(performance.now() - t0)}ms`);
       loaded.add(key);
+    } else {
+      try { bytes = (await ffmpeg.readFile(filename)) as Uint8Array; } catch {}
     }
-    builtinFontFile = filename;
+    builtinRealFamily = bytes ? readFontFamilyName(bytes) ?? undefined : undefined;
+    console.log(`[burnSubtitles] built-in "${builtinFontName}" -> internal family: "${builtinRealFamily ?? "(unknown)"}"`);
   }
 
-  const sf = scaleFilter(perf);
-  let subFilter: string;
-  if (fontFile) {
-    subFilter = `subtitles=${subsName}:fontsdir=/fonts:force_style='FontFile=${fontFile}'`;
-  } else if (builtinFontFile) {
-    subFilter = `subtitles=${subsName}:fontsdir=/fonts:force_style='FontFile=${builtinFontFile}'`;
-  } else if (builtinFontName) {
-    subFilter = `subtitles=${subsName}:fontsdir=/fonts:force_style='FontName=${builtinFontName}'`;
-  } else {
-    subFilter = `subtitles=${subsName}:fontsdir=/fonts`;
+  // libass matches ASS `Fontname` against the font's INTERNAL family name
+  // (from its SFNT `name` table), not the file name. If our DB label or the
+  // caller's builtin name doesn't match, patch the ASS Style line so libass
+  // resolves the font correctly via fontsdir. `FontFile=` is NOT a valid ASS
+  // style attribute — libass silently ignores it, which is why prior attempts
+  // rendered the fallback (Noto Sans) or nothing at all.
+  const targetFamily = customRealFamily ?? builtinRealFamily ?? undefined;
+  let patchedAss = assText;
+  if (targetFamily) {
+    patchedAss = patchedAss.replace(
+      /^(Style:\s*Default,)[^,]*,/m,
+      `$1${targetFamily},`,
+    );
   }
+  await ffmpeg.writeFile(subsName, new TextEncoder().encode(patchedAss));
+
+  const sf = scaleFilter(perf);
+  const subFilter = `subtitles=${subsName}:fontsdir=/fonts`;
   const vf = sf ? `${sf},${subFilter}` : subFilter;
-  console.log(`[burnSubtitles] vf =`, vf, `customFont =`, customFont?.family, `builtinFont =`, builtinFontName);
+  console.log(`[burnSubtitles] vf =`, vf, `targetFamily =`, targetFamily, `customFont =`, customFont?.family, `builtinFont =`, builtinFontName);
   try {
     // NOTE: Do NOT combine `-map 0:v:0` with `-vf` here. When the video
     // stream is explicitly mapped, ffmpeg.wasm's simple-filter (`-vf`) path
@@ -651,6 +661,7 @@ export async function burnSubtitles(
       "-movflags", "+faststart",
       "-y", outputName,
     ]);
+
 
 
     return await readOutputFile(ffmpeg, outputName, "Subtitle burn-in");
