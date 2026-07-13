@@ -554,10 +554,32 @@ export async function burnSubtitles(
   await ffmpeg.writeFile(inputName, await fetchFile(video));
   await ffmpeg.writeFile(subsName, new TextEncoder().encode(assText));
   const { fontFile } = await ensureFont(ffmpeg, customFont);
+
+  // Bundle a built-in font (e.g. Lato) into /fonts and use FontFile= for it,
+  // so libass never has to guess. ffmpeg.wasm has no system fonts.
+  let builtinFontFile: string | undefined;
+  if (!fontFile && builtinFontName && BUILTIN_FONTS[builtinFontName]) {
+    const spec = BUILTIN_FONTS[builtinFontName];
+    const filename = `/fonts/${sanitizeFontFile(builtinFontName)}.${spec.format}`;
+    let loaded = customFontsLoadedFor.get(ffmpeg);
+    if (!loaded) { loaded = new Set(); customFontsLoadedFor.set(ffmpeg, loaded); }
+    const key = `builtin::${builtinFontName}`;
+    if (!loaded.has(key)) {
+      const t0 = performance.now();
+      const bytes = await fetchFile(spec.url);
+      await ffmpeg.writeFile(filename, bytes);
+      console.log(`[burnSubtitles] bundled built-in "${builtinFontName}" — ${bytes.byteLength} bytes in ${Math.round(performance.now() - t0)}ms`);
+      loaded.add(key);
+    }
+    builtinFontFile = filename;
+  }
+
   const sf = scaleFilter(perf);
   let subFilter: string;
   if (fontFile) {
     subFilter = `subtitles=${subsName}:fontsdir=/fonts:force_style='FontFile=${fontFile}'`;
+  } else if (builtinFontFile) {
+    subFilter = `subtitles=${subsName}:fontsdir=/fonts:force_style='FontFile=${builtinFontFile}'`;
   } else if (builtinFontName) {
     subFilter = `subtitles=${subsName}:fontsdir=/fonts:force_style='FontName=${builtinFontName}'`;
   } else {
