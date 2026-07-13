@@ -314,23 +314,63 @@ export async function extractAudioMp3(
 const FONT_URL =
   "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf";
 const FONT_FAMILY = "Noto Sans";
+
+export interface CustomFont {
+  /** ASS Fontname — must match the font's actual family name. */
+  family: string;
+  /** Path inside the private `fonts` Supabase storage bucket. */
+  storagePath: string;
+  /** File extension (ttf | otf | woff | woff2). */
+  format: string;
+  /** Optional pre-fetched bytes; if omitted, downloaded from Supabase storage. */
+  bytes?: Uint8Array;
+}
+
 // Track font install per ffmpeg instance. A cancel/reload creates a new
-// FFmpeg with a fresh virtual filesystem, so a module-level boolean would
+// FFmpeg with a fresh virtual filesystem, so a module-level set would
 // falsely report the font as loaded and libass would silently render
 // nothing — subtitles disappear from the burned output.
-const fontLoadedFor = new WeakSet<object>();
+const baseFontLoadedFor = new WeakSet<object>();
+const customFontsLoadedFor = new WeakMap<object, Set<string>>();
 
-async function ensureFont(ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>) {
-  if (fontLoadedFor.has(ffmpeg)) return;
-  try {
-    await ffmpeg.createDir("/fonts");
-  } catch {
-    // already exists
-  }
-  const bytes = await fetchFile(FONT_URL);
-  await ffmpeg.writeFile("/fonts/NotoSans-Regular.ttf", bytes);
-  fontLoadedFor.add(ffmpeg);
+function sanitizeFontFile(name: string) {
+  return name.replace(/[^A-Za-z0-9._-]+/g, "_");
 }
+
+async function ensureFont(
+  ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>,
+  custom?: CustomFont,
+) {
+  if (!baseFontLoadedFor.has(ffmpeg)) {
+    try {
+      await ffmpeg.createDir("/fonts");
+    } catch {
+      // already exists
+    }
+    const bytes = await fetchFile(FONT_URL);
+    await ffmpeg.writeFile("/fonts/NotoSans-Regular.ttf", bytes);
+    baseFontLoadedFor.add(ffmpeg);
+  }
+  if (!custom) return;
+  const key = `${custom.family}::${custom.storagePath}`;
+  let loaded = customFontsLoadedFor.get(ffmpeg);
+  if (!loaded) {
+    loaded = new Set();
+    customFontsLoadedFor.set(ffmpeg, loaded);
+  }
+  if (loaded.has(key)) return;
+  let bytes = custom.bytes;
+  if (!bytes) {
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { data, error } = await supabase.storage.from("fonts").download(custom.storagePath);
+    if (error || !data) throw new Error(`Failed to download font: ${error?.message ?? "unknown"}`);
+    bytes = new Uint8Array(await data.arrayBuffer());
+  }
+  const filename = `/fonts/${sanitizeFontFile(custom.family)}.${custom.format}`;
+  await ffmpeg.writeFile(filename, bytes);
+  loaded.add(key);
+}
+
 
 export interface SubtitleStyle {
   /** Font size in pixels (relative to source video height in ASS PlayRes) */
