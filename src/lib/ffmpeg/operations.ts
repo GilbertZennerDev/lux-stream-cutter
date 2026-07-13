@@ -362,12 +362,27 @@ async function ensureFont(
   let bytes = custom.bytes;
   if (!bytes) {
     const { supabase } = await import("@/integrations/supabase/client");
+    console.log(`[ensureFont] downloading "${custom.family}" from storage: ${custom.storagePath}`);
+    const t0 = performance.now();
     const { data, error } = await supabase.storage.from("fonts").download(custom.storagePath);
     if (error || !data) throw new Error(`Failed to download font: ${error?.message ?? "unknown"}`);
     bytes = new Uint8Array(await data.arrayBuffer());
+    console.log(
+      `[ensureFont] downloaded "${custom.family}" (${custom.format}) — ${bytes.byteLength} bytes in ${Math.round(performance.now() - t0)}ms`,
+    );
+  } else {
+    console.log(`[ensureFont] using pre-fetched bytes for "${custom.family}" — ${bytes.byteLength} bytes`);
   }
   const filename = `/fonts/${sanitizeFontFile(custom.family)}.${custom.format}`;
   await ffmpeg.writeFile(filename, bytes);
+  try {
+    const written = await ffmpeg.readFile(filename);
+    const writtenLen =
+      typeof written === "string" ? written.length : (written as Uint8Array).byteLength;
+    console.log(`[ensureFont] wrote ${filename} to ffmpeg FS — ${writtenLen} bytes`);
+  } catch (e) {
+    console.warn(`[ensureFont] could not verify written file ${filename}:`, e);
+  }
   loaded.add(key);
 }
 
