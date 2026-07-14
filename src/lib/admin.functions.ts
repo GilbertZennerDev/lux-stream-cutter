@@ -229,6 +229,7 @@ export const addUserToGroup = createServerFn({ method: "POST" })
     const found = existing?.users?.find((u) => (u.email ?? "").toLowerCase() === data.email.toLowerCase());
     if (found) userId = found.id;
 
+    let tempPassword: string | null = null;
     if (!userId) {
       if (data.mode === "password") {
         const pw = data.password ?? crypto.randomUUID().slice(0, 12) + "!A1";
@@ -239,14 +240,22 @@ export const addUserToGroup = createServerFn({ method: "POST" })
         });
         if (error) throw new Error(error.message);
         userId = created.user!.id;
-        // Move on and return the temp password to the caller
-        await supabaseAdmin.from("group_members").upsert({ user_id: userId, group_id: data.groupId });
-        return { userId, tempPassword: pw, invited: false };
+        tempPassword = pw;
+      } else {
+        // invite by email
+        const { data: invited, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(data.email);
+        if (error) throw new Error(error.message);
+        userId = invited.user!.id;
       }
-      // invite by email
-      const { data: invited, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(data.email);
+    } else if (data.mode === "password") {
+      // User already exists — apply the password the admin just entered so they can actually sign in.
+      const pw = data.password ?? crypto.randomUUID().slice(0, 12) + "!A1";
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        password: pw,
+        email_confirm: true,
+      });
       if (error) throw new Error(error.message);
-      userId = invited.user!.id;
+      tempPassword = pw;
     }
 
     // Enforce single-group membership via upsert on primary key user_id
