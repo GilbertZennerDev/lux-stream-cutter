@@ -68,6 +68,7 @@ import {
   DEFAULT_STREAM_URL,
 } from "@/lib/hls/shared-recorder";
 import { SubtitlePreview } from "@/components/cutter/SubtitlePreview";
+import { fireConfetti } from "@/components/fx/Confetti";
 import { LiveSubtitleOverlay } from "@/components/cutter/LiveSubtitleOverlay";
 import { CuePreview } from "@/components/cutter/CuePreview";
 import { CuePositionDialog } from "@/components/cutter/CuePositionDialog";
@@ -1415,6 +1416,7 @@ function Dashboard() {
 
       moveToStage("done");
       toast.success(`Cut ${picked.length} blocks with subtitles`);
+      fireConfetti();
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : String(err);
       const message = friendlyPipelineError(rawMessage, activeStage);
@@ -1976,20 +1978,25 @@ function Dashboard() {
                       })}
                     </ul>
                   </ScrollArea>
-                  <div className="sticky bottom-0 z-10 mt-3 -mx-6 px-6 py-3 border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+                  <div className="sticky bottom-0 z-10 mt-3 -mx-6 px-6 py-4 border-t border-white/10 bg-gradient-to-t from-card/95 to-card/70 backdrop-blur-xl">
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-xs text-muted-foreground">
-                        <span className="font-medium text-foreground">{selectedCues.size}</span> of {cues.length} selected
+                        <span className="font-mono tabular font-semibold text-foreground">{selectedCues.size}</span>
+                        <span className="mx-1">of</span>
+                        <span className="font-mono tabular">{cues.length}</span>
+                        <span className="ml-1">selected</span>
                         {selectedCues.size > 0 && (
-                          <span className="ml-2">
-                            → {formatSeconds(cues.filter((c) => selectedCues.has(c.index)).reduce((sum, c) => sum + (c.end - c.start), 0))}
+                          <span className="ml-2 text-accent">
+                            → <span className="font-mono tabular">{formatSeconds(cues.filter((c) => selectedCues.has(c.index)).reduce((sum, c) => sum + (c.end - c.start), 0))}</span>
                           </span>
                         )}
                       </div>
                       <Button
-                        size="default"
+                        size="lg"
+                        variant="premium"
                         disabled={!file || isRunning || selectedCues.size === 0}
                         onClick={cutFromSelectedCues}
+                        className={cn(selectedCues.size > 0 && !isRunning && "animate-pulse-glow")}
                       >
                         {isRunning && (stage === "cutting" || stage === "burning") ? (
                           <>
@@ -2003,6 +2010,7 @@ function Dashboard() {
                       </Button>
                     </div>
                   </div>
+
                 </>
               )}
             </CardContent>
