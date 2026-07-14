@@ -2858,7 +2858,12 @@ function PipelineStepper({
                 ) : (
                   <Icon className="h-3.5 w-3.5" />
                 )}
-                <span>{s.label}</span>
+                <span>
+                  {s.label}
+                  {isActive && progress > 0 && progress < 1 && (
+                    <span className="ml-1 tabular-nums opacity-80">{Math.round(progress * 100)}%</span>
+                  )}
+                </span>
               </div>
               {i < active.length - 1 && <div className="w-4 h-px bg-border" />}
             </div>
