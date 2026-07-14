@@ -223,46 +223,72 @@ export const addUserToGroup = createServerFn({ method: "POST" })
     if (adminError) throw new Error(adminError.message);
     if (!adminRole) throw new Error("Forbidden: super admin required");
 
-    // Find existing user by email
+    // Find existing user by email (paginated — listUsers caps at ~200/page)
     let userId: string | null = null;
-    const { data: existing } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
-    const found = existing?.users?.find((u) => (u.email ?? "").toLowerCase() === data.email.toLowerCase());
-    if (found) userId = found.id;
+    let found: { id: string; email?: string | null } | undefined;
+    for (let page = 1; page <= 25; page++) {
+      const { data: existing, error: listErr } = await supabaseAdmin.auth.admin.listUsers({
+        page,
+        perPage: 200,
+      });
+      if (listErr) throw new Error(`List users failed: ${listErr.message}`);
+      found = existing?.users?.find((u) => (u.email ?? "").toLowerCase() === data.email.toLowerCase());
+      if (found) {
+        userId = found.id;
+        break;
+      }
+      if (!existing?.users || existing.users.length < 200) break;
+    }
 
     let tempPassword: string | null = null;
-    if (!userId) {
-      if (data.mode === "password") {
-        const pw = data.password ?? crypto.randomUUID().slice(0, 12) + "!A1";
-        const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
-          email: data.email,
+    const genPw = () => crypto.randomUUID().slice(0, 12) + "!A1";
+
+    try {
+      if (!userId) {
+        if (data.mode === "password") {
+          const pw = data.password && data.password.length > 0 ? data.password : genPw();
+          const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
+            email: data.email,
+            password: pw,
+            email_confirm: true,
+          });
+          if (error) throw error;
+          userId = created.user!.id;
+          tempPassword = pw;
+        } else {
+          const { data: invited, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(data.email);
+          if (error) throw error;
+          userId = invited.user!.id;
+        }
+      } else if (data.mode === "password") {
+        const pw = data.password && data.password.length > 0 ? data.password : genPw();
+        const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
           password: pw,
           email_confirm: true,
         });
-        if (error) throw new Error(error.message);
-        userId = created.user!.id;
+        if (error) throw error;
         tempPassword = pw;
-      } else {
-        // invite by email
-        const { data: invited, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(data.email);
-        if (error) throw new Error(error.message);
-        userId = invited.user!.id;
       }
-    } else if (data.mode === "password") {
-      // User already exists — apply the password the admin just entered so they can actually sign in.
-      const pw = data.password ?? crypto.randomUUID().slice(0, 12) + "!A1";
-      const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-        password: pw,
-        email_confirm: true,
-      });
-      if (error) throw new Error(error.message);
-      tempPassword = pw;
+    } catch (e) {
+      const err = e as { message?: string; code?: string; status?: number };
+      const code = err.code ?? "";
+      const message = err.message ?? "Unknown error";
+      if (code === "weak_password" || /pwned|weak|compromised/i.test(message)) {
+        throw new Error(
+          "Password rejected by leaked-password check. Choose a stronger, non-common password.",
+        );
+      }
+      if (code === "email_exists" || /already/i.test(message)) {
+        throw new Error(`A user with ${data.email} already exists. Try again — the list will refresh.`);
+      }
+      throw new Error(message || "Failed to create/update user");
     }
 
     // Enforce single-group membership via upsert on primary key user_id
     const { error: upErr } = await supabaseAdmin
       .from("group_members")
       .upsert({ user_id: userId, group_id: data.groupId });
-    if (upErr) throw new Error(upErr.message);
+    if (upErr) throw new Error(`Add to group failed: ${upErr.message}`);
 
     return { userId, tempPassword, invited: !found && data.mode === "invite" };
   });
