@@ -1997,6 +1997,171 @@ function Dashboard() {
                 <Slider min={14} max={64} step={1} value={[fontSize]} onValueChange={(v) => setFontSize(v[0])} />
               </div>
 
+              {/* Style presets — one-click looks. */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5" /> Style presets
+                  </Label>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {SUBTITLE_LOOK_PRESETS.map((p) => {
+                    const active = p.look.primaryColor === look.primaryColor
+                      && p.look.borderStyle === look.borderStyle
+                      && !!p.look.popIn === !!look.popIn
+                      && (p.look.fadeMs ?? 0) === (look.fadeMs ?? 0);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => applyPreset(p.id)}
+                        className={cn(
+                          "text-left rounded-md border px-3 py-2 hover:bg-muted/40 transition-colors",
+                          active && "border-primary bg-primary/5",
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="inline-block h-4 w-4 rounded-sm border border-black/20"
+                            style={{ backgroundColor: p.look.primaryColor }}
+                          />
+                          <span className="text-sm font-medium">{p.label}</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{p.hint}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Colors + text style */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Text color</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="color"
+                      value={look.primaryColor ?? "#FFFFFF"}
+                      onChange={(e) => patchLook({ primaryColor: e.target.value })}
+                      className="h-8 w-10 rounded border cursor-pointer bg-transparent"
+                    />
+                    <Input
+                      value={look.primaryColor ?? "#FFFFFF"}
+                      onChange={(e) => patchLook({ primaryColor: e.target.value })}
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">
+                    {look.borderStyle === "box" ? "Box color" : "Outline color"}
+                  </Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="color"
+                      value={(look.borderStyle === "box" ? look.shadowColor : look.outlineColor) ?? "#000000"}
+                      onChange={(e) => patchLook(
+                        look.borderStyle === "box"
+                          ? { shadowColor: e.target.value }
+                          : { outlineColor: e.target.value },
+                      )}
+                      className="h-8 w-10 rounded border cursor-pointer bg-transparent"
+                    />
+                    <Input
+                      value={(look.borderStyle === "box" ? look.shadowColor : look.outlineColor) ?? "#000000"}
+                      onChange={(e) => patchLook(
+                        look.borderStyle === "box"
+                          ? { shadowColor: e.target.value }
+                          : { outlineColor: e.target.value },
+                      )}
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <ToggleGroup
+                  type="single"
+                  size="sm"
+                  value={look.borderStyle ?? "outline"}
+                  onValueChange={(v) => v && patchLook({ borderStyle: v as "outline" | "box" })}
+                >
+                  <ToggleGroupItem value="outline" aria-label="Outline">Outline</ToggleGroupItem>
+                  <ToggleGroupItem value="box" aria-label="Box">Box</ToggleGroupItem>
+                </ToggleGroup>
+                <div className="h-4 w-px bg-border mx-1" />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={look.bold !== false ? "default" : "outline"}
+                  className="h-8 w-8 p-0"
+                  onClick={() => patchLook({ bold: look.bold === false })}
+                  title="Bold"
+                >
+                  <Bold className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={look.italic ? "default" : "outline"}
+                  className="h-8 w-8 p-0"
+                  onClick={() => patchLook({ italic: !look.italic })}
+                  title="Italic"
+                >
+                  <Italic className="h-3.5 w-3.5" />
+                </Button>
+                <div className="ml-auto text-[11px] text-muted-foreground">
+                  Shadow {look.shadow ?? 0}px
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Shadow</Label>
+                  <span className="text-xs text-muted-foreground">{look.shadow ?? 0}px</span>
+                </div>
+                <Slider
+                  min={0}
+                  max={6}
+                  step={1}
+                  value={[look.shadow ?? 0]}
+                  onValueChange={(v) => patchLook({ shadow: v[0] })}
+                />
+              </div>
+
+              {/* Effects */}
+              <div className="rounded-md border bg-muted/20 p-3 space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <Wand2 className="h-3.5 w-3.5" />
+                  <span className="text-xs font-medium">Effects</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="popin" className="text-xs">Pop-in on entry</Label>
+                    <p className="text-[11px] text-muted-foreground">Scale from 82% → 100% over 140ms</p>
+                  </div>
+                  <Switch
+                    id="popin"
+                    checked={!!look.popIn}
+                    onCheckedChange={(v) => patchLook({ popIn: v })}
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Fade in/out</Label>
+                    <span className="text-xs text-muted-foreground">{look.fadeMs ?? 0} ms</span>
+                  </div>
+                  <Slider
+                    min={0}
+                    max={500}
+                    step={20}
+                    value={[look.fadeMs ?? 0]}
+                    onValueChange={(v) => patchLook({ fadeMs: v[0] })}
+                  />
+                </div>
+              </div>
+
               <div>
                 <p className="text-xs text-muted-foreground mb-2">
                   Drag the caption on the frame. Per-cue tweaks live in the transcript list below.
