@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, LockKeyhole } from "lucide-react";
 import { getFrameAt } from "@/lib/cutter/frameSnapshots";
 import { cn } from "@/lib/utils";
+import type { SubtitleLook } from "@/lib/ffmpeg/operations";
+import { renderSubtitleStyle } from "@/lib/cutter/subtitleLookStyle";
 
 export type LockAxis = "free" | "x" | "y";
 
@@ -26,6 +28,8 @@ interface Props {
   videoWidth?: number;
   /** If false, defers snapshot until the element is visible. */
   eager?: boolean;
+  /** Colour/effect look — mirrors the burned output. */
+  look?: SubtitleLook;
 }
 
 /**
@@ -36,7 +40,7 @@ interface Props {
  */
 export function CuePreview({
   videoSrc, time, xPct, yPct, fontSize, outline, text, lockAxis = "free", onChange,
-  size = "inline", videoWidth = 1280, eager = false,
+  size = "inline", videoWidth = 1280, eager = false, look,
 }: Props) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
