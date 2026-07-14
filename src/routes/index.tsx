@@ -1976,6 +1976,33 @@ function Dashboard() {
                       })}
                     </ul>
                   </ScrollArea>
+                  <div className="sticky bottom-0 z-10 mt-3 -mx-6 px-6 py-3 border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">{selectedCues.size}</span> of {cues.length} selected
+                        {selectedCues.size > 0 && (
+                          <span className="ml-2">
+                            → {formatSeconds(cues.filter((c) => selectedCues.has(c.index)).reduce((sum, c) => sum + (c.end - c.start), 0))}
+                          </span>
+                        )}
+                      </div>
+                      <Button
+                        size="default"
+                        disabled={!file || isRunning || selectedCues.size === 0}
+                        onClick={cutFromSelectedCues}
+                      >
+                        {isRunning && (stage === "cutting" || stage === "burning") ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Cutting…
+                          </>
+                        ) : (
+                          <>
+                            <Scissors className="h-4 w-4 mr-2" /> Cut selected ({selectedCues.size})
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
                 </>
               )}
             </CardContent>
