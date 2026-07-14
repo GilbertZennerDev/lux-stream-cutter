@@ -2437,7 +2437,13 @@ function Dashboard() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Outputs</CardTitle>
+              <CardTitle className="text-base flex items-center justify-between">
+                <span>Outputs</span>
+                <label className="flex items-center gap-2 text-xs font-normal text-muted-foreground cursor-pointer">
+                  <Switch checked={autoDownload} onCheckedChange={setAutoDownload} />
+                  Auto-download when done
+                </label>
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {clipPreviewUrl && (
@@ -2454,34 +2460,43 @@ function Dashboard() {
               )}
 
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" disabled={!clipBlob} onClick={() => download(clipBlob, "clip.mp4")}>
-                  <Download className="h-4 w-4 mr-2" /> clip.mp4
+                <Button variant="outline" size="sm" disabled={!clipBlob} onClick={() => download(clipBlob, outName("cut", "mp4"))}>
+                  <Download className="h-4 w-4 mr-2" /> {outName("cut", "mp4")}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={!audioBlob}
-                  onClick={() => download(audioBlob, "clip.mp3")}
+                  onClick={() => download(audioBlob, outName("audio", "mp3"))}
                 >
-                  <Download className="h-4 w-4 mr-2" /> clip.mp3
+                  <Download className="h-4 w-4 mr-2" /> {outName("audio", "mp3")}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={!srtText}
                   onClick={() =>
-                    download(srtText ? new Blob([srtText], { type: "text/plain" }) : null, "subtitles.srt")
+                    download(srtText ? new Blob([srtText], { type: "text/plain" }) : null, outName("subs", "srt"))
                   }
                 >
-                  <Download className="h-4 w-4 mr-2" /> subtitles.srt
+                  <Download className="h-4 w-4 mr-2" /> {outName("subs", "srt")}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!srtText}
+                  onClick={copySrt}
+                  title="Copy SRT to clipboard"
+                >
+                  <Copy className="h-4 w-4 mr-2" /> Copy SRT
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={!subbedBlob}
-                  onClick={() => download(subbedBlob, "clip_subbed.mp4")}
+                  onClick={() => download(subbedBlob, outName("subbed", "mp4"))}
                 >
-                  <Download className="h-4 w-4 mr-2" /> clip_subbed.mp4
+                  <Download className="h-4 w-4 mr-2" /> {outName("subbed", "mp4")}
                 </Button>
               </div>
 
