@@ -12,6 +12,8 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AuthGate } from "@/components/auth/AuthGate";
+import { AmbientBackground } from "@/components/fx/AmbientBackground";
+import { Confetti } from "@/components/fx/Confetti";
 
 
 function NotFoundComponent() {
@@ -101,11 +103,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7e92ceed-b824-43db-93d2-6f3be8443a85/id-preview-716c1043--b7a5e62c-aa52-44d8-ab33-18a7e7768692.lovable.app-1783356603955.png" },
     ],
     links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: appCss,
+        href: "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Work+Sans:wght@300;400;500;600;700&display=swap",
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
   shellComponent: RootShell,
@@ -116,12 +121,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="min-h-screen bg-background text-foreground antialiased">
+        <AmbientBackground />
         {children}
+        <Confetti />
         <Scripts />
       </body>
     </html>
@@ -135,7 +142,9 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <AuthGate>
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
+        <div key={typeof window !== "undefined" ? window.location.pathname : "ssr"} className="animate-route-in">
+          <Outlet />
+        </div>
       </AuthGate>
     </QueryClientProvider>
   );
