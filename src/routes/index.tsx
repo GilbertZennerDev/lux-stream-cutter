@@ -1445,6 +1445,36 @@ function Dashboard() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  /** Derive a sensible base name from the source title/file for downloads. */
+  const outputBase = useMemo(() => {
+    const raw = sourceTitle ?? file?.name ?? "clip";
+    return raw.replace(/\.[^./]+$/, "").replace(/[\/\\:*?"<>|]+/g, "_").slice(0, 80) || "clip";
+  }, [sourceTitle, file]);
+  const outName = (suffix: string, ext: string) => `${outputBase}__${suffix}.${ext}`;
+
+  // Auto-download the final artifact when the pipeline finishes, if enabled.
+  const lastAutoDlRef = useRef<Blob | null>(null);
+  useEffect(() => {
+    if (!autoDownload || stage !== "done") return;
+    const final = subbedBlob ?? clipBlob;
+    if (!final || final === lastAutoDlRef.current) return;
+    lastAutoDlRef.current = final;
+    const name = subbedBlob ? outName("subbed", "mp4") : outName("cut", "mp4");
+    download(final, name);
+    toast.success(`Downloaded ${name}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, subbedBlob, clipBlob, autoDownload]);
+
+  const copySrt = async () => {
+    if (!srtText) return;
+    try {
+      await navigator.clipboard.writeText(srtText);
+      toast.success("SRT copied to clipboard");
+    } catch {
+      toast.error("Clipboard blocked — use the download button");
+    }
+  };
+
   const clipPreviewUrl = useMemo(() => (clipBlob ? URL.createObjectURL(clipBlob) : null), [clipBlob]);
   const subbedPreviewUrl = useMemo(() => (subbedBlob ? URL.createObjectURL(subbedBlob) : null), [subbedBlob]);
 
