@@ -264,7 +264,7 @@ export const addUserToGroup = createServerFn({ method: "POST" })
       .upsert({ user_id: userId, group_id: data.groupId });
     if (upErr) throw new Error(upErr.message);
 
-    return { userId, tempPassword: null, invited: !found };
+    return { userId, tempPassword, invited: !found && data.mode === "invite" };
   });
 
 export const removeUserFromGroup = createServerFn({ method: "POST" })
