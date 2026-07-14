@@ -52,10 +52,13 @@ import {
   remuxTsToMp4,
   cuesToAss,
   getVideoDimensions,
+  type SubtitleLook,
 } from "@/lib/ffmpeg/operations";
 import { onFfmpegLog, cancelFFmpeg } from "@/lib/ffmpeg/client";
 import { luxasrJsonToCues, cuesToSrt, type SrtCue } from "@/lib/subtitles/luxasrToSrt";
 import { shortenCues } from "@/lib/subtitles/shortenSrt";
+import { SUBTITLE_LOOK_PRESETS, DEFAULT_SUBTITLE_LOOK } from "@/lib/cutter/subtitleLookPresets";
+import { Copy, Sparkles, Bold, Italic, Wand2 } from "lucide-react";
 import {
   ensureSharedRecorder,
   snapshotSharedRecorderDelta,
