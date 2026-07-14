@@ -1859,6 +1859,26 @@ function Dashboard() {
                         return (
                           <li key={c.index} className="p-2 hover:bg-muted/40 group">
                             <div className="flex items-center gap-2 mb-1">
+                              <button
+                                type="button"
+                                onClick={() => onRangeCheck(c.index)}
+                                title={
+                                  rangeAnchor === null
+                                    ? "Set as range anchor"
+                                    : rangeAnchor === c.index
+                                    ? "Range anchor"
+                                    : `Select range from #${rangeAnchor} to #${c.index}`
+                                }
+                                aria-label={`Select range up to block ${c.index}`}
+                                className={cn(
+                                  "h-4 w-4 rounded-sm border border-dashed flex items-center justify-center transition-colors",
+                                  rangeAnchor === c.index
+                                    ? "border-accent bg-accent/20 text-accent"
+                                    : "border-muted-foreground/40 text-muted-foreground hover:border-accent hover:text-accent",
+                                )}
+                              >
+                                <ChevronsUpDown className="h-3 w-3" />
+                              </button>
                               <Checkbox
                                 checked={isSelected}
                                 onCheckedChange={() => toggleCue(c.index)}
