@@ -1,4 +1,6 @@
 import { useCallback, useRef } from "react";
+import type { SubtitleLook } from "@/lib/ffmpeg/operations";
+import { renderSubtitleStyle } from "@/lib/cutter/subtitleLookStyle";
 
 interface Props {
   xPct: number;
@@ -7,6 +9,7 @@ interface Props {
   outline: number;
   onChange: (x: number, y: number) => void;
   sample?: string;
+  look?: SubtitleLook;
 }
 
 /**
