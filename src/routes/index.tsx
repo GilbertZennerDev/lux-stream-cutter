@@ -1867,9 +1867,9 @@ function Dashboard() {
                                     ? "Set as range anchor"
                                     : rangeAnchor === c.index
                                     ? "Range anchor"
-                                    : `Select range from #${rangeAnchor} to #${c.index}`
+                                    : `Select range from #${rangeAnchor + 1} to #${c.index + 1}`
                                 }
-                                aria-label={`Select range up to block ${c.index}`}
+                                aria-label={`Select range up to block ${c.index + 1}`}
                                 className={cn(
                                   "h-4 w-4 rounded-sm border border-dashed flex items-center justify-center transition-colors",
                                   rangeAnchor === c.index
@@ -1882,8 +1882,11 @@ function Dashboard() {
                               <Checkbox
                                 checked={isSelected}
                                 onCheckedChange={() => toggleCue(c.index)}
-                                aria-label={`Select block ${c.index}`}
+                                aria-label={`Select block ${c.index + 1}`}
                               />
+                              <span className="text-[10px] font-mono tabular-nums text-muted-foreground min-w-[1.5rem]">
+                                #{c.index + 1}
+                              </span>
                               <button
                                 type="button"
                                 className="text-[11px] font-mono text-primary hover:underline"
@@ -2896,8 +2899,8 @@ function Dashboard() {
                 <>
                   This will add <span className="font-mono tabular font-semibold text-foreground">{rangePending.toAdd.length}</span>{" "}
                   block{rangePending.toAdd.length === 1 ? "" : "s"} to your selection, from{" "}
-                  <span className="font-mono tabular">#{rangePending.from}</span> to{" "}
-                  <span className="font-mono tabular">#{rangePending.to}</span>.
+                  <span className="font-mono tabular">#{rangePending.from + 1}</span> to{" "}
+                  <span className="font-mono tabular">#{rangePending.to + 1}</span>.
                 </>
               )}
             </AlertDialogDescription>
