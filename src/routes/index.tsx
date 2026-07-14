@@ -594,6 +594,8 @@ function Dashboard() {
   const [rawCues, setRawCues] = useState<SrtCue[]>([]);
   const [selectedCues, setSelectedCues] = useState<Set<number>>(new Set());
   const [reasrIdx, setReasrIdx] = useState<number | null>(null);
+  const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
+  const [rangePending, setRangePending] = useState<{ from: number; to: number; toAdd: number[] } | null>(null);
 
   const toggleCue = (idx: number) =>
     setSelectedCues((prev) => {
@@ -603,7 +605,41 @@ function Dashboard() {
       return n;
     });
   const selectAllCues = () => setSelectedCues(new Set(cues.map((c) => c.index)));
-  const clearSelectedCues = () => setSelectedCues(new Set());
+  const clearSelectedCues = () => {
+    setSelectedCues(new Set());
+    setRangeAnchor(null);
+  };
+  const onRangeCheck = (clickedIdx: number) => {
+    const anchor =
+      rangeAnchor ??
+      (selectedCues.size > 0 ? Math.min(...Array.from(selectedCues)) : cues[0]?.index ?? clickedIdx);
+    const from = Math.min(anchor, clickedIdx);
+    const to = Math.max(anchor, clickedIdx);
+    const inRange = cues.filter((c) => c.index >= from && c.index <= to).map((c) => c.index);
+    const toAdd = inRange.filter((i) => !selectedCues.has(i));
+    if (toAdd.length <= 1) {
+      if (toAdd.length === 1) {
+        setSelectedCues((prev) => {
+          const n = new Set(prev);
+          n.add(toAdd[0]);
+          return n;
+        });
+      }
+      setRangeAnchor(clickedIdx);
+      return;
+    }
+    setRangePending({ from, to, toAdd });
+  };
+  const confirmRangeSelect = () => {
+    if (!rangePending) return;
+    setSelectedCues((prev) => {
+      const n = new Set(prev);
+      for (const i of rangePending.toAdd) n.add(i);
+      return n;
+    });
+    setRangeAnchor(rangePending.to);
+    setRangePending(null);
+  };
   const updateCuePos = (idx: number, patch: { xPct?: number | undefined; yPct?: number | undefined }) =>
     setCues((prev) => prev.map((c) => (c.index === idx ? { ...c, ...patch } : c)));
   const resetCuePos = (idx: number) =>
