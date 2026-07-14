@@ -448,7 +448,26 @@ async function ensureFont(
 
 
 
-export interface SubtitleStyle {
+export interface SubtitleLook {
+  /** Fill colour, hex #RRGGBB. Default #FFFFFF. */
+  primaryColor?: string;
+  /** Outline colour, hex #RRGGBB. Default #000000. */
+  outlineColor?: string;
+  /** Shadow offset in px. 0 disables shadow. */
+  shadow?: number;
+  /** Shadow / back-box colour, hex #RRGGBB. Default #000000. */
+  shadowColor?: string;
+  /** "outline" = classic contour, "box" = opaque background box (ASS BorderStyle=3). */
+  borderStyle?: "outline" | "box";
+  bold?: boolean;
+  italic?: boolean;
+  /** Fade-in/out duration in ms (applied to every cue). 0 disables. */
+  fadeMs?: number;
+  /** Pop-in scale animation on cue entry. */
+  popIn?: boolean;
+}
+
+export interface SubtitleStyle extends SubtitleLook {
   /** Font size in pixels (relative to source video height in ASS PlayRes) */
   fontSize: number;
   /** Outline (black contour) thickness in pixels. 0 disables. */
@@ -461,6 +480,19 @@ export interface SubtitleStyle {
   videoWidth: number;
   /** Video height in pixels (used as ASS PlayResY). */
   videoHeight: number;
+}
+
+/** Convert `#RRGGBB` to ASS `&H00BBGGRR` (alpha 00 = opaque). Accepts short/long forms. */
+export function hexToAssColor(hex: string | undefined, fallback = "#FFFFFF", alpha = 0): string {
+  const raw = (hex ?? fallback).trim().replace(/^#/, "");
+  let r = "FF", g = "FF", b = "FF";
+  if (/^[0-9a-f]{3}$/i.test(raw)) {
+    r = raw[0] + raw[0]; g = raw[1] + raw[1]; b = raw[2] + raw[2];
+  } else if (/^[0-9a-f]{6}$/i.test(raw)) {
+    r = raw.slice(0, 2); g = raw.slice(2, 4); b = raw.slice(4, 6);
+  }
+  const aa = Math.max(0, Math.min(255, alpha)).toString(16).padStart(2, "0").toUpperCase();
+  return `&H${aa}${b.toUpperCase()}${g.toUpperCase()}${r.toUpperCase()}`;
 }
 
 function assTime(seconds: number): string {
