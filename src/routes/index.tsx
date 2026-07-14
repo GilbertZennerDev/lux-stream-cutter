@@ -2016,6 +2016,7 @@ function Dashboard() {
                       setSubY(y);
                     }}
                     onCueChange={(idx, patch) => updateCuePos(idx, patch)}
+                    look={look}
                   />
                 ) : (
                   <SubtitlePreview
@@ -2027,6 +2028,7 @@ function Dashboard() {
                       setSubX(x);
                       setSubY(y);
                     }}
+                    look={look}
                   />
                 )}
                 <Collapsible open={posControlsOpen} onOpenChange={setPosControlsOpen} className="mt-3">
