@@ -1415,6 +1415,7 @@ function Dashboard() {
 
       moveToStage("done");
       toast.success(`Cut ${picked.length} blocks with subtitles`);
+      fireConfetti();
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : String(err);
       const message = friendlyPipelineError(rawMessage, activeStage);
