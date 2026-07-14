@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LockKeyhole } from "lucide-react";
 import type { SrtCue } from "@/lib/subtitles/luxasrToSrt";
 import type { LockAxis } from "./CuePreview";
+import type { SubtitleLook } from "@/lib/ffmpeg/operations";
+import { renderSubtitleStyle } from "@/lib/cutter/subtitleLookStyle";
 
 interface Props {
   src: string;
@@ -21,6 +23,8 @@ interface Props {
   videoWidth?: number;
   /** Optional external ref for parent-controlled seeking. */
   videoRef?: React.RefObject<HTMLVideoElement | null>;
+  /** Colour/effect look — mirrors what will be burned in. */
+  look?: SubtitleLook;
 }
 
 /**
