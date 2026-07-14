@@ -836,6 +836,8 @@ function Dashboard() {
     setAudioOffsetSec(saved.audioOffsetSec);
     setBurnIn(saved.burnIn);
     if (saved.lockAxis) setLockAxis(saved.lockAxis);
+    if (saved.look) setLook({ ...DEFAULT_SUBTITLE_LOOK, ...saved.look });
+    if (typeof saved.autoDownload === "boolean") setAutoDownload(saved.autoDownload);
   };
 
   const acceptRestore = async () => {
