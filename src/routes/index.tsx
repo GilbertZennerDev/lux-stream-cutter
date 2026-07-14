@@ -555,6 +555,16 @@ function Dashboard() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [lockAxis, setLockAxis] = useState<"free" | "x" | "y">("free");
   const [editorCueIdx, setEditorCueIdx] = useState<number | null>(null);
+  const [look, setLook] = useState<SubtitleLook>(DEFAULT_SUBTITLE_LOOK);
+  const [autoDownload, setAutoDownload] = useState(true);
+  const patchLook = useCallback((patch: Partial<SubtitleLook>) => setLook((l) => ({ ...l, ...patch })), []);
+  const applyPreset = useCallback((id: string) => {
+    const p = SUBTITLE_LOOK_PRESETS.find((x) => x.id === id);
+    if (!p) return;
+    setLook(p.look);
+    if (typeof p.outline === "number") setSubOutline(p.outline);
+    toast.success(`Applied "${p.label}" look`);
+  }, []);
 
   const perfState = usePerfTier();
   const perf = perfState.profile;
