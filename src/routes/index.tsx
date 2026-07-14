@@ -1936,7 +1936,7 @@ function Dashboard() {
                                   <SubtitlePreview
                                     xPct={cx}
                                     yPct={cy}
-                                    fontSize={Math.min(fontSize, 28)}
+                                    fontSize={fontSize}
                                     outline={subOutline}
                                     sample={c.text.split(/\r?\n/)[0].slice(0, 60) || "…"}
                                     onChange={(x, y) => updateCuePos(c.index, { xPct: x, yPct: y })}
